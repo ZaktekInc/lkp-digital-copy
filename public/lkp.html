@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ru" data-visualize-standalone data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Цифровая копия ЛКП</title>
+<link rel="stylesheet" href="/lkp.css">
+</head>
+<body>
+<div id="lkp-current-map">
+
+
+  <div class="lkp-shell">
+    <nav class="lkp-side" aria-label="Меню ЛКП">
+      <div class="brand"><span class="brand-compact">AQSI<br>РР</span><span class="brand-full">AQSI&nbsp;&nbsp;×&nbsp;&nbsp;РР</span><button class="btn btn-ghost mobile-menu-toggle" type="button" aria-label="Открыть меню" aria-expanded="false" data-mobile-menu><i data-lucide="menu" aria-hidden="true"></i></button></div>
+      <div class="side-group">
+        <button class="btn btn-ghost side-main" data-page="profile"><i class="nav-icon" data-lucide="user" aria-hidden="true"></i><span class="side-label">Профиль</span></button>
+      </div>
+      <div class="side-group">
+        <button class="btn btn-ghost side-main" data-toggle="shop-menu" aria-expanded="true"><i class="nav-icon" data-lucide="shopping-bag" aria-hidden="true"></i><span class="side-label">Интернет-магазин</span><i class="chev" data-lucide="chevron-right" aria-hidden="true"></i></button>
+        <div class="submenu" id="shop-menu">
+          <button class="btn btn-ghost side-sub" data-page="catalog"><span class="side-label">Каталог</span></button>
+          <button class="btn btn-ghost side-sub" data-page="cart" data-cart-menu disabled><span class="side-label">Корзина</span></button>
+          <button class="btn btn-ghost side-sub" data-page="orders"><span class="side-label">Заказы</span></button>
+        </div>
+      </div>
+      <div class="side-group">
+        <button class="btn btn-ghost side-main" data-toggle="license-menu" aria-expanded="true"><i class="nav-icon" data-lucide="key-round" aria-hidden="true"></i><span class="side-label">Лицензии</span><i class="chev" data-lucide="chevron-right" aria-hidden="true"></i></button>
+        <div class="submenu" id="license-menu">
+          <button class="btn btn-ghost side-sub" data-page="activations"><span class="side-label">Список активаций</span></button>
+          <button class="btn btn-ghost side-sub" data-page="activate-org"><span class="side-label">Активация лицензий</span></button>
+          <button class="btn btn-ghost side-sub" data-page="orders"><span class="side-label">Заказы</span></button>
+        </div>
+      </div>
+      <button class="btn btn-ghost side-exit" type="button" data-logout><i class="nav-icon" data-lucide="log-out" aria-hidden="true"></i><span class="side-label">Выход</span></button>
+    </nav>
+    <main class="content" id="lkp-content"></main>
+  </div>
+
+  <script src="/lkp-data.js"></script>
+  <script src="/lkp.js"></script>
+</div>
+
+<script id="codex-visualization-floating-ui-core" src="https://unpkg.com/@floating-ui/core@1.7.3/dist/floating-ui.core.umd.min.js"></script>
+<script id="codex-visualization-floating-ui-dom" src="https://unpkg.com/@floating-ui/dom@1.7.4/dist/floating-ui.dom.umd.min.js"></script>
+<script id="codex-visualization-lucide" async src="https://unpkg.com/lucide@1.17.0/dist/umd/lucide.js"></script>
+<script id="codex-visualization-tooltip" src="/lkp-tooltip.js"></script>
+<script id="codex-visualization-lucide-initialization" src="/lkp-lucide-init.js"></script>
+</body>
+</html>
