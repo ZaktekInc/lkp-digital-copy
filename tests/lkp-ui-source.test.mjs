@@ -53,3 +53,17 @@ test("keeps invoices, permanent-partner prices and paid activation order status 
   assert.match(source, /pricePopover\(p\)/);
   assert.match(source, /class="catalog-price">Ваша цена<\/th><th class="catalog-quantity">Количество/);
 });
+
+test("connects the existing LKP screens to the protected D1 order flow", () => {
+  assert.match(source, /serverApi\(`\/api\/catalog/);
+  assert.match(source, /serverApi\("\/api\/orders"/);
+  assert.match(source, /idempotencyKey/);
+  assert.match(source, /Заказ сохранён в постоянной базе данных D1/);
+  assert.match(source, /refreshServerOrder/);
+  assert.match(source, /visibleOrderRows/);
+  assert.match(source, /visibleActivations/);
+  assert.match(source, /organizationAccessLoaded/);
+  assert.match(source, /filter\(order => !savedDetails\[order\[0\]\]\?\.serverId\)/);
+  assert.match(source, /ordersLoadError/);
+  assert.match(source, /orderDetailsError/);
+});

@@ -1,4 +1,6 @@
       function render(page, context) {
+        activePage = page;
+        activeContext = context ?? null;
         let html = "";
         shell.classList.toggle("login-mode", page === "login");
         if (page === "login") {
@@ -13,7 +15,7 @@
           const c = contacts[context || 0];
           html = `<div class="page-head"><div class="page-title">Редактирование контакта</div></div><div class="details panel"><div class="key-value"><div class="label">Отдел</div><div>${c[0]}</div></div><div class="key-value"><div class="label">Должность</div><div>${c[1]}</div></div><div class="key-value"><div class="label">ФИО</div><div>${c[2]}</div></div><div class="key-value"><div class="label">Телефон</div><div>${c[3]}</div></div><div class="key-value"><div class="label">Email</div><div>${c[4]}</div></div></div>`;
         } else if (page === "orders") {
-          html = `<div class="page-head"><div class="page-title">Заказы</div></div>${orderTable()}`;
+          html = `<div class="page-head"><div class="page-title">Заказы</div></div>${ordersLoadError ? `<div class="notice" role="alert">${esc(ordersLoadError)}</div>` : ""}${orderTable()}`;
         } else if (page === "order") {
           const o = context || orders[0];
           const details = orderDetails[o[0]] || null;
@@ -25,7 +27,7 @@
             : licenseOrder
               ? [["1", "Сервис обновлений — aQsi 5Ф", "2 000 ₽", "1", "2 000 ₽"], ["2", "Расширенный функционал — aQsi 5Ф", "2 000 ₽", "1", "2 000 ₽"]]
               : [["1", "ПАК aQsi 5Ф", "24 500 ₽", "1", "24 500 ₽"]];
-          html = `<div class="page-head"><div class="page-title">Заказ № ${esc(o[0])}</div></div>
+          html = `<div class="page-head"><div class="page-title">Заказ № ${esc(o[0])}</div></div>${orderDetailsError ? `<div class="notice" role="alert">${esc(orderDetailsError)}</div>` : ""}
             <div class="order-columns">
               <section class="order-block"><h3>Контакт</h3>
                 <div class="order-field"><div class="label">Организация</div><div>${esc(details?.org || 'ООО "ЗОЛОТОЙ СТАНДАРТ"')}</div></div><div class="order-field"><div class="label">ФИО</div><div>${esc(details?.name || "Колесников В. В.")}</div></div><div class="order-field"><div class="label">Телефон</div><div>${esc(details?.phone || "+7 996 965-09-07")}</div></div><div class="order-field"><div class="label">E-mail</div><div><a href="mailto:${esc(details?.email || "aqaglobal+testzs@aqsi.ru")}">${esc(details?.email || "aqaglobal+testzs@aqsi.ru")}</a></div></div><div class="order-field"><div class="label">Комментарий</div><div>${esc(details?.comment || (licenseOrder ? `Активация № ${linked?.[0] || "421"}` : "—"))}</div></div>
@@ -37,6 +39,7 @@
             </div>
             <section class="mini-section"><h3>Вендор: ${esc(details?.vendor || (advanceOrder ? "Пи Джи Групп" : licenseOrder ? "Пэй Киоск" : "Пи Джи Групп"))}</h3>${plainTable(["№", "Наименование", "Цена", "Количество", "Сумма"], items, "order-items")}<div class="mini-total">Итого: ${details ? rub(details.total) : advanceOrder ? "10 000 ₽" : licenseOrder ? "4 000 ₽" : "24 500 ₽"}</div></section>
             ${linked ? `<section class="mini-section"><h3>Связанные лицензии</h3>${toolbar("order-linked-licenses", { search: false, org: false })}<div class="table-responsive"><table class="table table-sm"><thead><tr><th>№ активации</th><th>Статус активации</th><th>Вендор</th><th>Лицензий</th><th>Стоимость</th><th><span class="sr-only">Файл лицензий</span></th></tr></thead><tbody><tr data-go="activation-linked" data-index="0"><td>${esc(linked[0])}</td><td>${esc(linked[3])}</td><td>${esc(linked[4])}</td><td>${esc(linked[5])}</td><td>${esc(linked[6])}</td><td><button class="btn btn-ghost" type="button" aria-label="Скачать файл лицензий" data-download-license><i data-lucide="download" aria-hidden="true"></i></button></td></tr></tbody></table></div></section>` : ""}
+            ${details?.history?.length ? `<section class="mini-section"><h3>История статусов</h3><div class="panel">${details.history.map(entry => `<div class="order-field"><div class="label">${esc(new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short" }).format(new Date(entry.changedAt)))}</div><div><strong>${esc(entry.toStatus)}</strong>${entry.fromStatus ? ` ← ${esc(entry.fromStatus)}` : ""}</div></div>`).join("")}</div></section>` : ""}
             <section class="mini-section"><h3>Документы</h3><div class="documents"><button class="btn" type="button" data-doc-download="Счет на оплату.pdf"><i data-lucide="file-text" aria-hidden="true"></i>Счет на оплату.pdf</button>${advanceOrder ? "" : `<button class="btn" type="button" data-doc-download="Расходная накладная.pdf"><i data-lucide="file-text" aria-hidden="true"></i>Расходная накладная.pdf</button>`}</div><div class="text-small text-muted" data-doc-status aria-live="polite"></div></section>`;
         } else if (page === "activations") {
           html = `<div class="page-head"><div class="page-title">Список активаций</div><div class="viz-row"><button class="btn special-action" type="button" data-instruction>Инструкция</button><button class="btn special-action" type="button" data-prices>Цены</button><button class="btn btn-primary" data-page="activate-org">Активация лицензий</button></div></div><div class="info-block"><h4>Методы установки лицензий:</h4><p><strong>aQsi</strong> — происходит автоматически. <a href="https://aqsi.ru/support/podgotovka-kassyi-aqsi-k-rabote-s-nds-22/" target="_blank" rel="noopener noreferrer"><strong>Инструкция</strong></a> по подготовке ККТ к работе с новыми ставками НДС.</p><p><strong>РР-Электро</strong> — скачайте файл лицензий в формате .slf и установите на устройство согласно <a href="https://knowledge-base.aqsi.ru/pages/viewpage.action?pageId=164560900" target="_blank" rel="noopener noreferrer"><strong>инструкции</strong></a>.</p><p><strong>PayOnline</strong> — скачайте файл лицензий в формате .slf и установите на устройство согласно <a href="https://knowledge-base.aqsi.ru/pages/viewpage.action?pageId=165281793" target="_blank" rel="noopener noreferrer"><strong>инструкции</strong></a>.</p></div><div class="notice" data-instruction-note aria-live="polite"></div>${activationTable()}<dialog class="price-dialog" data-prices-dialog><div class="dialog-head"><div class="page-title">Цены на лицензии</div><button class="btn btn-ghost" type="button" aria-label="Закрыть" data-close-prices><i data-lucide="x" aria-hidden="true"></i></button></div><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Наименование</th><th>РРЦ (Розница)</th><th>Партнер</th><th>Постоянный партнер</th></tr></thead><tbody><tr><td>Сервис обновлений</td><td>4 000 ₽</td><td>2 000 ₽</td><td>2 000 ₽</td></tr><tr><td>Маркировка</td><td>1 000 ₽</td><td>500 ₽</td><td>500 ₽</td></tr><tr><td>Расширенный функционал</td><td>2 000 ₽</td><td>1 000 ₽</td><td>1 000 ₽</td></tr></tbody></table></div></dialog>`;
@@ -52,10 +55,7 @@
             <section class="mini-section">${plainTable(["Серийный номер", "Тип лицензии", "Подписка", "Цена"], licenseRows, "activation-licenses")}</section>
             <dialog class="form-dialog" data-activation-comment-dialog><div class="dialog-head"><h2>${activationComment ? "Редактировать комментарий" : "Добавить комментарий"}</h2><button class="btn btn-ghost" type="button" aria-label="Закрыть" data-close-activation-comment><i data-lucide="x" aria-hidden="true"></i></button></div><label class="form-label">Комментарий<textarea class="form-control" rows="4" data-activation-comment-input>${esc(activationComment)}</textarea></label><div class="dialog-actions"><button class="btn btn-primary" type="button" data-save-activation-comment="${esc(a[0])}">Сохранить</button><button class="btn" type="button" data-close-activation-comment>Отмена</button></div></dialog>`;
         } else if (page === "activate-org") {
-          html = `<div class="page-head"><div class="page-title">Выберите организацию</div></div><div class="viz-grid choice-grid">
-            <button class="btn card org-choice" type="button" data-select-license-org='ООО "ЗОЛОТОЙ СТАНДАРТ"'><span class="org-choice-layout"><span class="org-choice-main"><span class="page-title">ООО "ЗОЛОТОЙ СТАНДАРТ"</span><span class="org-inn">7724827983</span></span><span class="org-choice-balance"><span class="label">Баланс</span><strong>${rub(balances['ООО "ЗОЛОТОЙ СТАНДАРТ"'] || 0)}</strong></span></span></button>
-            <button class="btn card org-choice" type="button" data-select-license-org="ООО Бета"><span class="org-choice-layout"><span class="org-choice-main"><span class="page-title">ООО Бета</span><span class="org-inn">7812345678</span></span><span class="org-choice-balance"><span class="label">Баланс</span><strong>${rub(balances["ООО Бета"] || 0)}</strong></span></span></button>
-          </div>`;
+          html = `<div class="page-head"><div class="page-title">Выберите организацию</div></div>${!organizationAccessLoaded ? '<div class="notice">Проверяем доступные организации…</div>' : organizations.length ? `<div class="viz-grid choice-grid">${organizations.map(org => `<button class="btn card org-choice" type="button" data-select-license-org="${esc(org[1])}"><span class="org-choice-layout"><span class="org-choice-main"><span class="page-title">${esc(org[1])}</span><span class="org-inn">${esc(org[2])}</span></span><span class="org-choice-balance"><span class="label">Баланс</span><strong>${rub(balances[org[1]] || 0)}</strong></span></span></button>`).join("")}</div>` : '<div class="notice">Нет доступных организаций.</div>'}`;
         } else if (page === "activate-offer") {
           html = `<div class="page-head"><div class="page-title">Оферта сублицензионного договора</div></div><div class="offer-copy"><div class="form-check"><input class="form-check-input" id="offer-accept" type="checkbox" data-offer-check><label class="form-check-label" for="offer-accept">Нажимая кнопку «Продолжить», вы подтверждаете, что ознакомлены и согласны с условиями <a href="https://aqsi.ru/lkp-oferta/" target="_blank" rel="noopener noreferrer"><strong>оферты сублицензионного договора</strong></a> в новой редакции</label></div></div><button class="btn btn-primary" type="button" data-offer-continue disabled>Продолжить</button>`;
         } else if (page === "activate") {
@@ -74,7 +74,8 @@
             <dialog class="form-dialog" data-insufficient-dialog><div class="dialog-head"><h2>Недостаточно средств для активации</h2></div><p>Недостаточно средств на балансе организации для активации лицензий</p><p>Необходимо пополнить баланс на сумму: <strong data-deficit-amount>0 ₽</strong></p><p><strong>Хотите пополнить сейчас?</strong></p><div class="dialog-actions"><button class="btn special-action" type="button" data-insufficient-topup>Пополнить</button><button class="btn action-outline" type="button" data-insufficient-cancel>Отмена</button></div></dialog>
             <dialog class="form-dialog" data-balance-dialog><div class="dialog-head"><h2>Пополнение баланса</h2><button class="btn btn-ghost" type="button" aria-label="Закрыть" data-close-balance><i data-lucide="x" aria-hidden="true"></i></button></div><p>Укажите сумму пополнения</p><h3>Организация: ${esc(org)}</h3><div class="balance-grid"><div class="panel"><div class="label">Текущий баланс</div><h3 data-current-balance>${rub(currentBalance)}</h3></div><div class="panel"><div class="label">Баланс после пополнения</div><h3 data-balance-after>${rub(currentBalance)}</h3></div></div><label class="form-label">Сумма пополнения<input class="form-control" type="number" min="1" max="10000000" placeholder="Сумма пополнения ₽ (до 10 000 000 ₽)" data-top-up-amount></label><p class="muted-note">Для пополнения баланса на указанную сумму будет сформирован заказ в личном кабинете.</p><div class="dialog-actions"><button class="btn btn-primary" type="button" data-create-top-up disabled>Сформировать заказ</button><button class="btn" type="button" data-close-balance>Отмена</button></div></dialog>`;
         } else if (page === "catalog") {
-          html = `<div class="page-head"><div class="page-title">Каталог</div><button class="btn catalog-cart ${cart.length ? "btn-primary" : ""}" type="button" data-open-cart ${cart.length ? "" : "disabled"}><i data-lucide="shopping-cart" aria-hidden="true"></i>Корзина <span data-cart-count>${cart.reduce((sum, item) => sum + item.qty, 0)}</span></button></div><div id="catalog-table">${catalogTable()}</div><div class="notice" data-catalog-notice aria-live="polite"></div><dialog class="confirm-dialog" data-remove-dialog><div class="page-title">Удаление товара</div><div class="notice">Вы уверены, что хотите удалить товар из корзины?</div><div class="confirm-actions"><button class="btn" type="button" data-remove-cancel>Отмена</button><button class="btn btn-primary" type="button" data-remove-confirm>Удалить</button></div></dialog><dialog class="confirm-dialog" data-org-required-dialog><div class="page-title">Организация не выбрана</div><div class="notice">Для добавления товара в корзину необходимо выбрать организацию</div><div class="confirm-actions"><button class="btn btn-primary" type="button" data-org-required-ok>ОК</button></div></dialog>`;
+          const cartAvailable = organizationAccessLoaded && cart.length > 0;
+          html = `<div class="page-head"><div class="page-title">Каталог</div><button class="btn catalog-cart ${cartAvailable ? "btn-primary" : ""}" type="button" data-open-cart ${cartAvailable ? "" : "disabled"}><i data-lucide="shopping-cart" aria-hidden="true"></i>Корзина <span data-cart-count>${cart.reduce((sum, item) => sum + item.qty, 0)}</span></button></div><div id="catalog-table">${catalogTable(catalogState.selectedOrg, catalogState.selectedGroup)}</div><div class="notice" data-catalog-notice aria-live="polite"></div><dialog class="confirm-dialog" data-remove-dialog><div class="page-title">Удаление товара</div><div class="notice">Вы уверены, что хотите удалить товар из корзины?</div><div class="confirm-actions"><button class="btn" type="button" data-remove-cancel>Отмена</button><button class="btn btn-primary" type="button" data-remove-confirm>Удалить</button></div></dialog><dialog class="confirm-dialog" data-org-required-dialog><div class="page-title">Организация не выбрана</div><div class="notice">Для добавления товара в корзину необходимо выбрать организацию</div><div class="confirm-actions"><button class="btn btn-primary" type="button" data-org-required-ok>ОК</button></div></dialog>`;
         } else if (page === "cart") {
           html = renderCart();
         } else if (page === "cart-result") {
@@ -115,8 +116,11 @@
         content.querySelectorAll("[data-table-org]").forEach(select => select.addEventListener("change", () => {
           if (select.dataset.tableOrg === "catalog") {
             const group = content.querySelector("[data-catalog-group]");
-            content.querySelector("#catalog-table").innerHTML = catalogTable(select.value, group ? group.value : "");
-            bindContent();
+            catalogState.selectedGroup = group ? group.value : "";
+            void loadCatalog(select.value).then(() => {
+              if (activePage === "catalog") render("catalog");
+            });
+            render("catalog");
           } else applyTableFilter(select.dataset.tableOrg);
         }));
         content.querySelectorAll("[data-table-payment]").forEach(select => select.addEventListener("change", () => applyTableFilter(select.dataset.tablePayment)));
@@ -127,6 +131,11 @@
       }
 
       function bindCatalog() {
+        const retry = content.querySelector("[data-catalog-retry]");
+        if (retry) retry.addEventListener("click", () => {
+          void loadCatalog(catalogState.selectedOrg).then(() => { if (activePage === "catalog") render("catalog"); });
+          render("catalog");
+        });
         const syncCatalogQuantity = (code, rawValue) => {
           const value = Math.max(1, Math.min(500, Number.parseInt(rawValue, 10) || 1)); quantities[code] = value;
           const input = content.querySelector(`[data-qty-input="${code}"]`); if (input) input.value = value;
@@ -137,6 +146,7 @@
         const group = content.querySelector("[data-catalog-group]");
         if (group) group.addEventListener("change", () => {
           const org = content.querySelector('[data-table-org="catalog"]');
+          catalogState.selectedGroup = group.value;
           content.querySelector("#catalog-table").innerHTML = catalogTable(org ? org.value : "", group.value);
           bindContent();
         });
@@ -244,7 +254,18 @@
           if (box) box.hidden = !check.checked;
         }));
         const checkout = content.querySelector("[data-checkout]");
-        if (checkout) checkout.addEventListener("click", () => { const result = createCartOrders(); if (result) render("cart-result", result); });
+        if (checkout) checkout.addEventListener("click", async () => {
+          checkout.disabled = true;
+          const errorBox = content.querySelector("[data-checkout-error]");
+          if (errorBox) errorBox.textContent = "";
+          try {
+            const result = await createCartOrders();
+            if (result) render("cart-result", result);
+          } catch (error) {
+            if (errorBox) errorBox.textContent = error instanceof Error ? error.message : "Не удалось оформить заказ";
+            checkout.disabled = false;
+          }
+        });
       }
 
       function bindLicenseCheckboxes() {
@@ -295,27 +316,39 @@
       function updateActivationActions() { const activateButton = content.querySelector("[data-create-activation]"); const deleteButton = content.querySelector("[data-delete-activation]"); if (activateButton) activateButton.disabled = !activationPreviewVisible || activationTotal() <= 0; if (deleteButton) deleteButton.disabled = !activationPreviewVisible; }
 
       function updateCartControls() {
-        root.querySelectorAll("[data-cart-menu]").forEach(button => { button.disabled = cart.length === 0; });
+        const cartAvailable = organizationAccessLoaded && cart.length > 0;
+        root.querySelectorAll("[data-cart-menu]").forEach(button => { button.disabled = !cartAvailable; });
         const button = content.querySelector("[data-open-cart]");
         if (button) {
-          button.disabled = cart.length === 0;
-          button.classList.toggle("btn-primary", cart.length > 0);
+          button.disabled = !cartAvailable;
+          button.classList.toggle("btn-primary", cartAvailable);
           const count = button.querySelector("[data-cart-count]");
           if (count) count.textContent = cart.reduce((sum, item) => sum + item.qty, 0);
         }
       }
 
       function bindContent() {
-        content.querySelectorAll("[data-page]").forEach(button => button.addEventListener("click", () => { const tab = button.dataset.openTab; render(button.dataset.page); if (tab) { const tabButton = content.querySelector(`[data-tab="${tab}"]`); if (tabButton) tabButton.click(); } }));
+        content.querySelectorAll("[data-page]").forEach(button => button.addEventListener("click", () => {
+          const tab = button.dataset.openTab;
+          render(button.dataset.page);
+          if (button.dataset.page === "orders") void refreshServerOrders().then(() => { if (activePage === "orders") render("orders"); });
+          if (tab) { const tabButton = content.querySelector(`[data-tab="${tab}"]`); if (tabButton) tabButton.click(); }
+        }));
         content.querySelectorAll("[data-download-license]").forEach(button => button.addEventListener("click", event => {
           event.stopPropagation();
         }));
-        content.querySelectorAll("tr[data-go]").forEach(row => row.addEventListener("click", () => {
+        content.querySelectorAll("tr[data-go]").forEach(row => row.addEventListener("click", async () => {
           const idx = Number(row.dataset.index || 0);
           if (row.dataset.go === "organization") render("organization", idx);
           if (row.dataset.go === "contact") render("contact", idx);
-          if (row.dataset.go === "order") render("order", orders.find(o => o[0] === row.dataset.orderNumber) || orders[idx]);
-          if (row.dataset.go === "activation") render("activation", activations[idx]);
+          if (row.dataset.go === "order") {
+            const order = orders.find(o => o[0] === row.dataset.orderNumber) || orders[idx];
+            if (orderDetails[order?.[0]]?.serverId) {
+              try { await refreshServerOrder(order[0]); } catch {}
+            }
+            render("order", orders.find(o => o[0] === order?.[0]) || order);
+          }
+          if (row.dataset.go === "activation") render("activation", visibleActivations()[idx]);
           if (row.dataset.go === "activation-linked") render("activation", activations.find(a => a[0] === row.cells[0].textContent) || activations[0]);
         }));
         const tabs = content.querySelectorAll("[data-tab]");
@@ -328,7 +361,14 @@
           bindContent();
         }));
         const addContact = content.querySelector("[data-add-contact]"); const contactDialog = content.querySelector("[data-contact-dialog]"); if (addContact && contactDialog) addContact.addEventListener("click", () => { if (typeof contactDialog.showModal === "function") contactDialog.showModal(); else contactDialog.setAttribute("open", ""); }); content.querySelectorAll("[data-close-contact]").forEach(button => button.addEventListener("click", () => { if (!contactDialog) return; if (typeof contactDialog.close === "function") contactDialog.close(); else contactDialog.removeAttribute("open"); })); const contactForm = content.querySelector("[data-contact-form]"); if (contactForm && contactDialog) contactForm.addEventListener("submit", event => { event.preventDefault(); if (typeof contactDialog.close === "function") contactDialog.close(); else contactDialog.removeAttribute("open"); });
-        content.querySelectorAll("[data-order-number]").forEach(orderButton => orderButton.addEventListener("click", event => { event.preventDefault(); render("order", orders.find(o => o[0] === orderButton.dataset.orderNumber) || orders[0]); }));
+        content.querySelectorAll("[data-order-number]").forEach(orderButton => orderButton.addEventListener("click", async event => {
+          event.preventDefault();
+          const number = orderButton.dataset.orderNumber;
+          if (orderDetails[number]?.serverId) {
+            try { await refreshServerOrder(number); } catch {}
+          }
+          render("order", orders.find(order => order[0] === number) || orders[0]);
+        }));
         const editActivationComment = content.querySelector("[data-edit-activation-comment]");
         const activationCommentDialog = content.querySelector("[data-activation-comment-dialog]");
         if (editActivationComment) editActivationComment.addEventListener("click", () => openDialog(activationCommentDialog));
@@ -487,3 +527,6 @@
         if (window.lucide) window.lucide.createIcons({ attrs: { width: 16, height: 16 } });
       });
       render("catalog");
+      void Promise.all([loadCatalog(), refreshServerOrders()]).then(() => {
+        if (["catalog", "orders", "profile", "organization", "activations", "activate-org", "cart"].includes(activePage)) render(activePage, activeContext);
+      });
