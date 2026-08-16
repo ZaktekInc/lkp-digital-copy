@@ -49,6 +49,18 @@ test("production artifact keeps local dev authorization disabled and protects ad
   const ordinaryAdminApi = await worker.fetch(new Request("https://example.test/api/admin/orders", { headers: ordinaryHeaders }), env, ctx);
   assert.equal(ordinaryAdminApi.status, 403);
 
+  const ordinaryReferenceApi = await worker.fetch(new Request("https://example.test/api/admin/references/vendors", { headers: ordinaryHeaders }), env, ctx);
+  assert.equal(ordinaryReferenceApi.status, 403);
+
+  const ordinaryActivationApi = await worker.fetch(new Request("https://example.test/api/admin/activations", { headers: ordinaryHeaders }), env, ctx);
+  assert.equal(ordinaryActivationApi.status, 403);
+
+  const ordinaryOrganizationsApi = await worker.fetch(new Request("https://example.test/api/admin/organizations", { headers: ordinaryHeaders }), env, ctx);
+  assert.equal(ordinaryOrganizationsApi.status, 403);
+
+  const ordinaryProductsApi = await worker.fetch(new Request("https://example.test/api/admin/products", { headers: ordinaryHeaders }), env, ctx);
+  assert.equal(ordinaryProductsApi.status, 403);
+
   const partialIdentity = await worker.fetch(new Request("http://localhost/admin", { headers: {
     "oai-authenticated-user-email": "seregaswimer@gmail.com",
   } }), env, ctx);

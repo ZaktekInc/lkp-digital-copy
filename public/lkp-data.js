@@ -38,14 +38,12 @@
       ];
       const orders = [
         ["12540", "ПГ-362", 'ООО "ЗОЛОТОЙ СТАНДАРТ"', "06.08.2026", "Отгружен", "Предоплата 100%", "4 000 ₽", "—", "Колесников В. В."],
-        ["12518", "СЧ-9055", "ООО Бета", "04.08.2026", "Готов к отгрузке", "Отсрочка 5 дней", "142 000 ₽", "—", "Петров Петр"],
-        ["12497", "СЧ-9024", 'ООО "ЗОЛОТОЙ СТАНДАРТ"', "01.08.2026", "Отгружен", "Предоплата 100%", "24 900 ₽", "✓", "Колесников В. В."],
         ["12480", "ПГ-098", "ООО Бета", "30.07.2026", "Отгружен", "Предоплата 100%", "10 000 ₽", "✓", "Петров Петр"]
       ];
-      const orderTypes = { "12540": "Активация лицензий", "12518": "Покупка товара", "12497": "Покупка товара", "12480": "Авансовый платеж" };
+      const orderTypes = { "12540": "Активация лицензий", "12480": "Авансовый платеж" };
       const activations = [
         ["123", "12540", 'ООО "ЗОЛОТОЙ СТАНДАРТ"', "Выполнена", "Пэй Киоск", "2", "4 000 ₽", "—", "06.08.2026", "123"],
-        ["124", "12497", 'ООО "ЗОЛОТОЙ СТАНДАРТ"', "В работе", "Пи Джи Групп", "2", "24 900 ₽", "✓", "01.08.2026", "—"]
+        ["124", "—", 'ООО "ЗОЛОТОЙ СТАНДАРТ"', "В работе", "Пи Джи Групп", "2", "24 900 ₽", "✓", "01.08.2026", "—"]
       ];
       const products = [
         { code: "AQSI-5F", name: "ПАК aQsi 5Ф", group: "ПАК", vendor: "Пи Джи Групп", rrp: 30000, partnerPrice: 25000, price: 23000, orgs: ['ООО "ЗОЛОТОЙ СТАНДАРТ"', "ООО Бета"] },
@@ -76,6 +74,7 @@
       let catalogRequestId = 0;
       let ordersLoadError = "";
       let orderDetailsError = "";
+      let contactsLoadError = "";
       let checkoutInProgress = false;
       let pendingCheckoutKey = "";
       function loadState() {
@@ -83,9 +82,12 @@
           const saved = JSON.parse(localStorage.getItem(storageKey) || "null");
           if (!saved || typeof saved !== "object") return;
           const savedDetails = saved.orderDetails || {};
-          (saved.orders || []).filter(order => !savedDetails[order[0]]?.serverId).forEach(order => { if (!orders.some(existing => existing[0] === order[0])) orders.unshift(order); });
-          Object.assign(orderTypes, Object.fromEntries(Object.entries(saved.orderTypes || {}).filter(([number]) => !savedDetails[number]?.serverId)));
-          Object.assign(orderDetails, Object.fromEntries(Object.entries(savedDetails).filter(([, details]) => !details?.serverId)));
+          const savedTypes = saved.orderTypes || {};
+          const isBrowserProductOrder = number => savedTypes[number] === "Покупка товара" || savedDetails[number]?.type === "Покупка товара";
+          const hadPersistentProductOrders = (saved.orders || []).some(order => isBrowserProductOrder(order[0])) || Object.keys(savedDetails).some(isBrowserProductOrder);
+          (saved.orders || []).filter(order => !savedDetails[order[0]]?.serverId && !isBrowserProductOrder(order[0])).forEach(order => { if (!orders.some(existing => existing[0] === order[0])) orders.unshift(order); });
+          Object.assign(orderTypes, Object.fromEntries(Object.entries(savedTypes).filter(([number]) => !savedDetails[number]?.serverId && !isBrowserProductOrder(number))));
+          Object.assign(orderDetails, Object.fromEntries(Object.entries(savedDetails).filter(([number, details]) => !details?.serverId && !isBrowserProductOrder(number))));
           (saved.activations || []).forEach(activation => { if (!activations.some(existing => existing[0] === activation[0])) activations.unshift(activation); });
           Object.assign(activationDetails, saved.activationDetails || {});
           (saved.carts || []).filter(savedCart => !savedCart?.server).forEach(savedCart => createdCarts.push(savedCart));
@@ -107,6 +109,7 @@
               if (details) details.status = "Отгружен";
             }
           });
+          if (hadPersistentProductOrders) saveState();
         } catch {}
       }
       function saveState() {
@@ -129,7 +132,7 @@
       }
 
       function replaceOrganizations(rows) {
-        organizations.splice(0, organizations.length, ...rows.map(org => [org.id, org.name, org.inn, org.city, "0", org.phone, org.email]));
+        organizations.splice(0, organizations.length, ...rows.map(org => [org.publicId || org.id, org.name, org.inn, org.city, "0", org.phone, org.email, org.id]));
         organizationAccessLoaded = true;
         const allowedNames = new Set(organizations.map(org => org[1]));
         for (let index = cart.length - 1; index >= 0; index -= 1) {
@@ -140,7 +143,7 @@
       }
 
       const isOrganizationVisible = organizationName => organizationAccessLoaded && organizations.some(org => org[1] === organizationName);
-      const visibleOrderRows = rows => rows.filter(order => isOrganizationVisible(order[2]));
+      const visibleOrderRows = rows => rows.filter(order => serverOrderNumbers.has(order[0]) || isOrganizationVisible(order[2]));
       const visibleActivations = () => activations.filter(activation => isOrganizationVisible(activation[2]));
 
       function replaceCatalogProducts(payload, organizationName) {
@@ -169,12 +172,11 @@
         catalogState.selectedOrg = organizationName;
         const organization = organizations.find(item => item[1] === organizationName);
         try {
-          const query = organization ? `?organizationId=${encodeURIComponent(organization[0])}` : "";
+          const query = organization ? `?organizationId=${encodeURIComponent(organization[7] || organization[0])}` : "";
           const payload = await serverApi(`/api/catalog${query}`);
           if (requestId !== catalogRequestId) return;
           replaceOrganizations(payload.organizations || []);
-          if (organization) replaceCatalogProducts(payload, organizationName);
-          else products.splice(0, products.length);
+          replaceCatalogProducts(payload, organizationName);
         } catch (error) {
           if (requestId !== catalogRequestId) return;
           catalogState.error = error instanceof Error ? error.message : "Не удалось загрузить каталог";
@@ -199,7 +201,9 @@
           phone: order.contactPhone,
           email: order.contactEmail,
           comment: order.comment,
-          vendor: [...new Set((order.items || []).map(item => item.vendor))].join(", "),
+          cartId: order.cartId || "",
+          cartNumber: order.cartNumber || "",
+          vendor: order.vendor || [...new Set((order.items || []).map(item => item.vendor))].join(", "),
           items: (order.items || []).map(item => ({ code: item.code, name: item.name, vendor: item.vendor, price: item.unitPriceCents / 100, qty: item.quantity })),
           total: order.totalCents / 100,
           history: order.history || []
@@ -210,7 +214,7 @@
         const number = order.number;
         serverOrderNumbers.add(number);
         orderTypes[number] = "Покупка товара";
-        const details = order.items ? serverOrderDetails(order) : { ...(orderDetails[number] || {}), serverId: order.id, number, type: "Покупка товара", status: order.status, payment: order.paymentStatus, date: new Intl.DateTimeFormat("ru-RU").format(new Date(order.createdAt)), invoice: order.invoiceNumber || "—", agreement: order.deliveryTerms, org: order.organization.name, name: order.contactName, phone: order.contactPhone, email: order.contactEmail, comment: order.comment, total: order.totalCents / 100 };
+        const details = order.items ? serverOrderDetails(order) : { ...(orderDetails[number] || {}), serverId: order.id, number, type: "Покупка товара", status: order.status, payment: order.paymentStatus, date: new Intl.DateTimeFormat("ru-RU").format(new Date(order.createdAt)), invoice: order.invoiceNumber || "—", agreement: order.deliveryTerms, org: order.organization.name, name: order.contactName, phone: order.contactPhone, email: order.contactEmail, comment: order.comment, cartId: order.cartId || "", cartNumber: order.cartNumber || "", vendor: order.vendor || "", total: order.totalCents / 100 };
         orderDetails[number] = details;
         const row = [number, details.invoice || "—", details.org, details.date, details.status, details.agreement, rub(details.total), details.payment === "Оплачено" ? "✓" : "—", details.name];
         const existing = orders.findIndex(item => item[0] === number);
@@ -226,18 +230,23 @@
         serverOrderNumbers.delete(number);
       }
 
+      function replaceServerProductOrders(serverOrders) {
+        const productNumbers = new Set([
+          ...serverOrderNumbers,
+          ...orders.filter(order => orderTypes[order[0]] === "Покупка товара" || orderDetails[order[0]]?.type === "Покупка товара").map(order => order[0])
+        ]);
+        productNumbers.forEach(removeServerOrder);
+        serverOrders.forEach(upsertServerOrder);
+      }
+
       async function refreshServerOrders() {
         try {
           const payload = await serverApi("/api/orders");
-          const receivedNumbers = new Set((payload.orders || []).map(order => order.number));
-          [...serverOrderNumbers].forEach(number => {
-            if (!receivedNumbers.has(number)) removeServerOrder(number);
-          });
-          (payload.orders || []).forEach(upsertServerOrder);
+          replaceServerProductOrders(Array.isArray(payload.orders) ? payload.orders : []);
           ordersLoadError = "";
           return true;
         } catch (error) {
-          [...serverOrderNumbers].forEach(removeServerOrder);
+          replaceServerProductOrders([]);
           ordersLoadError = error instanceof Error ? error.message : "Не удалось загрузить заказы";
           return false;
         }
@@ -255,6 +264,39 @@
           orderDetailsError = error instanceof Error ? error.message : "Не удалось обновить заказ";
           throw error;
         }
+      }
+
+      function replaceContacts(rows) {
+        contacts.splice(0, contacts.length, ...rows.map(contact => [
+          contact.department,
+          contact.position,
+          contact.fullName,
+          contact.phone,
+          contact.email
+        ]));
+      }
+
+      async function refreshContacts() {
+        try {
+          const payload = await serverApi("/api/contacts");
+          replaceContacts(payload.contacts || []);
+          contactsLoadError = "";
+          return true;
+        } catch (error) {
+          contacts.splice(0, contacts.length);
+          contactsLoadError = error instanceof Error ? error.message : "Не удалось загрузить контакты";
+          return false;
+        }
+      }
+
+      async function createServerContact(input) {
+        const payload = await serverApi("/api/contacts", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input)
+        });
+        await refreshContacts();
+        return payload.contact;
       }
 
       const esc = value => String(value).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
@@ -300,7 +342,7 @@
       }
 
       const organizationTable = () => organizationAccessLoaded
-        ? dataTable(["ID", "Название", "ИНН", "Город", "Договоры", "Телефон", "Email"], organizations, "organization", { id: "organizations", org: false, rowOrg: r => r[1] })
+        ? dataTable(["ID", "Название", "ИНН", "Город", "Договоры", "Телефон", "Email"], organizations.map(organization => organization.slice(0, 7)), "organization", { id: "organizations", org: false, rowOrg: r => r[1] })
         : '<div class="panel muted-note">Проверяем доступные организации…</div>';
       const contactTable = () => dataTable(["Отдел", "Должность", "ФИО", "Телефон", "Email"], contacts, "contact", { id: "contacts", org: false });
       const orderTable = (rows = orders, id = "orders", selectedOrg = "", options = {}) => {
@@ -374,15 +416,19 @@
         if (checkoutInProgress) return null;
         checkoutInProgress = true;
         pendingCheckoutKey ||= crypto.randomUUID();
-        const cartNumber = randomNatural(653, 999, new Set(createdCarts.map(item => String(item.number))));
         const grouped = {};
-        cart.forEach(item => { grouped[item.org] ||= { org: item.org, items: [] }; grouped[item.org].items.push({ ...item }); });
+        cart.forEach(item => {
+          const groupKey = `${item.org}|${item.vendor}`;
+          grouped[groupKey] ||= { org: item.org, vendor: item.vendor, items: [] };
+          grouped[groupKey].items.push({ ...item });
+        });
         try {
           const createdOrders = [];
           for (const group of Object.values(grouped)) {
             const organization = organizations.find(item => item[1] === group.org);
             if (!organization) throw new Error(`Организация «${group.org}» недоступна`);
-            const catalog = await serverApi(`/api/catalog?organizationId=${encodeURIComponent(organization[0])}`);
+            const organizationId = organization[7] || organization[0];
+            const catalog = await serverApi(`/api/catalog?organizationId=${encodeURIComponent(organizationId)}`);
             const byCode = new Map((catalog.products || []).map(product => [product.code, product]));
             const items = group.items.map(item => {
               const product = byCode.get(item.code);
@@ -392,11 +438,11 @@
             const payload = await serverApi("/api/orders", {
               method: "POST",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify({ organizationId: organization[0], idempotencyKey: `${pendingCheckoutKey}:${organization[0]}`, items, contactName: "Иванов Иван Иванович", contactPhone: "+7 987 654 32 10", contactEmail: "example@mail.ru", deliveryTerms: "Предоплата 100%" })
+              body: JSON.stringify({ organizationId, cartId: pendingCheckoutKey, idempotencyKey: `${pendingCheckoutKey}:${organizationId}:${group.vendor}`, items, contactName: "Иванов Иван Иванович", contactPhone: "+7 987 654 32 10", contactEmail: "example@mail.ru", deliveryTerms: "Предоплата 100%" })
             });
             createdOrders.push(upsertServerOrder(payload.order));
           }
-          const result = { number: cartNumber, date: todayLabel(), orders: createdOrders, server: true };
+          const result = { number: orderDetails[createdOrders[0]]?.cartNumber || "—", date: todayLabel(), orders: createdOrders, server: true };
           createdCarts.unshift(result);
           cart.splice(0, cart.length);
           pendingCheckoutKey = "";

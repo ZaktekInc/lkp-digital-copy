@@ -58,6 +58,7 @@ const schemaStatements = [
   )`,
   `CREATE TABLE IF NOT EXISTS organizations (
     id TEXT PRIMARY KEY NOT NULL,
+    public_id TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     inn TEXT NOT NULL,
     city TEXT NOT NULL DEFAULT '',
@@ -94,6 +95,9 @@ const schemaStatements = [
     number TEXT NOT NULL UNIQUE,
     organization_id TEXT NOT NULL REFERENCES organizations(id),
     user_id TEXT NOT NULL REFERENCES users(id),
+    cart_id TEXT NOT NULL DEFAULT '',
+    cart_number TEXT NOT NULL DEFAULT '',
+    vendor TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL,
     payment_status TEXT NOT NULL DEFAULT 'В ожидании',
     invoice_number TEXT,
@@ -131,6 +135,63 @@ const schemaStatements = [
     created_at TEXT NOT NULL
   )`,
   "CREATE INDEX IF NOT EXISTS idx_order_status_history_order_created_at ON order_status_history(order_id, created_at)",
+  `CREATE TABLE IF NOT EXISTS contacts (
+    id TEXT PRIMARY KEY NOT NULL,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    department TEXT NOT NULL,
+    position TEXT NOT NULL,
+    full_name TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    email TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  "CREATE INDEX IF NOT EXISTS idx_contacts_user_active ON contacts(user_id, is_active)",
+  `CREATE TABLE IF NOT EXISTS reference_items (
+    id TEXT PRIMARY KEY NOT NULL,
+    kind TEXT NOT NULL,
+    code TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (kind, code)
+  )`,
+  "CREATE INDEX IF NOT EXISTS idx_reference_items_kind_active ON reference_items(kind, is_active)",
+  `CREATE TABLE IF NOT EXISTS activations (
+    id TEXT PRIMARY KEY NOT NULL,
+    number TEXT NOT NULL UNIQUE,
+    order_number TEXT NOT NULL DEFAULT '',
+    organization_id TEXT NOT NULL REFERENCES organizations(id),
+    status TEXT NOT NULL,
+    vendor TEXT NOT NULL,
+    total_cents INTEGER NOT NULL,
+    payment_status TEXT NOT NULL,
+    ordered_at TEXT NOT NULL,
+    comment TEXT NOT NULL DEFAULT '',
+    is_active INTEGER NOT NULL DEFAULT 1
+  )`,
+  "CREATE INDEX IF NOT EXISTS idx_activations_organization_ordered_at ON activations(organization_id, ordered_at)",
+  `CREATE TABLE IF NOT EXISTS activation_items (
+    id TEXT PRIMARY KEY NOT NULL,
+    activation_id TEXT NOT NULL REFERENCES activations(id) ON DELETE CASCADE,
+    model TEXT NOT NULL,
+    license_type TEXT NOT NULL,
+    subscription_end TEXT NOT NULL DEFAULT '',
+    price_cents INTEGER NOT NULL
+  )`,
+  "CREATE INDEX IF NOT EXISTS idx_activation_items_activation_id ON activation_items(activation_id)",
+  `CREATE TABLE IF NOT EXISTS license_keys (
+    id TEXT PRIMARY KEY NOT NULL,
+    activation_item_id TEXT NOT NULL REFERENCES activation_items(id) ON DELETE CASCADE,
+    serial_number TEXT NOT NULL,
+    license_key TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'Активна'
+  )`,
+  "CREATE INDEX IF NOT EXISTS idx_license_keys_activation_item_id ON license_keys(activation_item_id)",
+  "PRAGMA optimize",
 ];
 
 const organizationsSeed = [
@@ -158,6 +219,81 @@ const organizationProductsSeed = [
   ["101", "RR-04F", 2640000],
 ] as const;
 
+const referenceSeed = [
+  ["partners", "partner", "ООО «Партнер»", "Постоянный партнер"],
+  ["price-types", "rrp", "РРЦ (Розница)", ""],
+  ["price-types", "partner", "Партнер", ""],
+  ["price-types", "permanent-partner", "Постоянный партнер", ""],
+  ["partner-statuses", "permanent", "Постоянный партнер", ""],
+  ["vendors", "pg-group", "Пи Джи Групп", ""],
+  ["vendors", "rr-electro", "РР-Электро", ""],
+  ["vendors", "pay-kiosk", "Пэй Киоск", ""],
+  ["delivery-terms", "prepayment-100", "Предоплата 100%", ""],
+  ["delivery-terms", "deferment-5", "Отсрочка 5 дней", ""],
+  ["contract-types", "sublicense", "Сублицензионный договор", ""],
+  ["contracts", "main", "Основной договор", ""],
+  ["contracts", "other-active", "Другой активный договор", ""],
+  ["categories", "cash-equipment", "Кассовое оборудование", ""],
+  ["product-groups", "pak", "ПАК", ""],
+  ["product-groups", "accessories", "Аксессуары", ""],
+  ["product-groups", "kkt", "ККТ", ""],
+  ...ORDER_STATUSES.map((status, index) => ["order-statuses", `status-${index + 1}`, status, ""] as const),
+  ["models", "aqsi-5f", "aQsi 5Ф", ""],
+  ["models", "aqsi-6f", "aQsi 6Ф", ""],
+  ["models", "aqsi-13", "aQsi 13", ""],
+  ["models", "rr-01f", "РР-01Ф", ""],
+  ["models", "rr-04f", "РР-04Ф", ""],
+] as const;
+
+async function ensureLegacyColumns(db: D1DatabaseLike): Promise<void> {
+  const organizationColumns = (await db.prepare('PRAGMA table_info("organizations")').all<{ name: string }>()).results ?? [];
+  if (organizationColumns.length > 0) {
+    const existing = new Set(organizationColumns.map((column) => column.name));
+    const additions = [
+      ["public_id", "TEXT NOT NULL DEFAULT ''"],
+      ["inn", "TEXT NOT NULL DEFAULT ''"],
+      ["city", "TEXT NOT NULL DEFAULT ''"],
+      ["phone", "TEXT NOT NULL DEFAULT ''"],
+      ["email", "TEXT NOT NULL DEFAULT ''"],
+      ["is_active", "INTEGER NOT NULL DEFAULT 1"],
+    ] as const;
+    for (const [name, definition] of additions) {
+      if (!existing.has(name)) await db.prepare(`ALTER TABLE organizations ADD COLUMN ${name} ${definition}`).run();
+    }
+    await db.prepare("UPDATE organizations SET public_id = id WHERE public_id = '' AND id <> '' AND id NOT GLOB '*[^0-9]*'").run();
+    const remaining = (await db.prepare("SELECT id FROM organizations WHERE public_id = '' ORDER BY id").all<{ id: string }>()).results ?? [];
+    const maximum = await db.prepare("SELECT MAX(CAST(public_id AS INTEGER)) AS value FROM organizations WHERE public_id <> '' AND public_id NOT GLOB '*[^0-9]*'").first<{ value: number | null }>();
+    let nextPublicId = Math.max(102, Number(maximum?.value ?? 0));
+    for (const row of remaining) {
+      nextPublicId += 1;
+      await db.prepare("UPDATE organizations SET public_id = ? WHERE id = ?").bind(String(nextPublicId), row.id).run();
+    }
+    await db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_organizations_public_id_unique ON organizations(public_id)").run();
+  }
+
+  const orderColumns = (await db.prepare('PRAGMA table_info("orders")').all<{ name: string }>()).results ?? [];
+  if (orderColumns.length > 0) {
+    if (!orderColumns.some((column) => column.name === "cart_id")) {
+      await db.prepare("ALTER TABLE orders ADD COLUMN cart_id TEXT NOT NULL DEFAULT ''").run();
+    }
+    if (!orderColumns.some((column) => column.name === "cart_number")) {
+      await db.prepare("ALTER TABLE orders ADD COLUMN cart_number TEXT NOT NULL DEFAULT ''").run();
+    }
+    if (!orderColumns.some((column) => column.name === "vendor")) {
+      await db.prepare("ALTER TABLE orders ADD COLUMN vendor TEXT NOT NULL DEFAULT ''").run();
+    }
+    const carts = (await db.prepare(`SELECT DISTINCT user_id, cart_id FROM orders
+        WHERE cart_id <> '' AND cart_number = '' ORDER BY user_id, cart_id`).all<{ user_id: string; cart_id: string }>()).results ?? [];
+    const maximum = await db.prepare("SELECT MAX(CAST(cart_number AS INTEGER)) AS value FROM orders WHERE cart_number <> '' AND cart_number NOT GLOB '*[^0-9]*'").first<{ value: number | null }>();
+    let nextCartNumber = Math.max(652, Number(maximum?.value ?? 0));
+    for (const cart of carts) {
+      nextCartNumber += 1;
+      await db.prepare("UPDATE orders SET cart_number = ? WHERE user_id = ? AND cart_id = ? AND cart_number = ''")
+        .bind(String(nextCartNumber), cart.user_id, cart.cart_id).run();
+    }
+  }
+}
+
 const initializedDatabases = new WeakMap<object, Promise<void>>();
 
 export async function initializeDatabase(db: D1DatabaseLike): Promise<void> {
@@ -166,15 +302,32 @@ export async function initializeDatabase(db: D1DatabaseLike): Promise<void> {
   if (existing) return existing;
 
   const initialization = (async () => {
+    await ensureLegacyColumns(db);
     await db.batch(schemaStatements.map((sql) => db.prepare(sql)));
 
     const now = new Date().toISOString();
     const seedStatements: D1PreparedStatementLike[] = [
       db.prepare("INSERT OR IGNORE INTO users (id, email, created_at, updated_at) VALUES (?, ?, ?, ?)").bind("test-partner-user", "partner@example.com", now, now),
-      ...organizationsSeed.map((row) => db.prepare("INSERT OR IGNORE INTO organizations (id, name, inn, city, phone, email, is_active) VALUES (?, ?, ?, ?, ?, ?, 1)").bind(...row)),
+      db.prepare("INSERT OR IGNORE INTO users (id, email, created_at, updated_at) VALUES (?, ?, ?, ?)").bind("local-development-admin", "seregaswimer@gmail.com", now, now),
+      ...organizationsSeed.map((row) => db.prepare("INSERT OR IGNORE INTO organizations (id, public_id, name, inn, city, phone, email, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)").bind(row[0], row[0], ...row.slice(1))),
       ...productsSeed.map((row) => db.prepare("INSERT OR IGNORE INTO products (id, code, name, group_name, vendor, rrp_cents, partner_price_cents, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)").bind(...row)),
       ...organizationProductsSeed.map((row) => db.prepare("INSERT OR IGNORE INTO organization_products (organization_id, product_id, price_cents, is_available) VALUES (?, ?, ?, 1)").bind(...row)),
       db.prepare("INSERT OR IGNORE INTO user_organizations (user_id, organization_id) VALUES (?, ?)").bind("test-partner-user", "101"),
+      db.prepare("INSERT OR IGNORE INTO contacts (id, user_id, department, position, full_name, phone, email, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)").bind("contact-partner-1", "test-partner-user", "Закупки", "Руководитель", "Иванов Иван", "+7 900 100-10-10", "ivanov@example.ru", now, now),
+      db.prepare("INSERT OR IGNORE INTO contacts (id, user_id, department, position, full_name, phone, email, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)").bind("contact-partner-2", "test-partner-user", "ИТ", "Инженер", "Петров Петр", "+7 900 200-20-20", "petrov@example.ru", now, now),
+      db.prepare("INSERT OR IGNORE INTO contacts (id, user_id, department, position, full_name, phone, email, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)").bind("contact-admin-1", "local-development-admin", "Закупки", "Руководитель", "Иванов Иван", "+7 900 100-10-10", "ivanov@example.ru", now, now),
+      db.prepare("INSERT OR IGNORE INTO contacts (id, user_id, department, position, full_name, phone, email, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)").bind("contact-admin-2", "local-development-admin", "ИТ", "Инженер", "Петров Петр", "+7 900 200-20-20", "petrov@example.ru", now, now),
+      ...referenceSeed.map((row) => db.prepare("INSERT OR IGNORE INTO reference_items (id, kind, code, name, description, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)").bind(`ref-${row[0]}-${row[1]}`, ...row, now, now)),
+      db.prepare("INSERT OR IGNORE INTO activations (id, number, order_number, organization_id, status, vendor, total_cents, payment_status, ordered_at, comment, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)").bind("activation-123", "123", "12540", "101", "Выполнена", "Пэй Киоск", 400000, "В ожидании", "2026-08-06T00:00:00.000Z", "123"),
+      db.prepare("INSERT OR IGNORE INTO activations (id, number, order_number, organization_id, status, vendor, total_cents, payment_status, ordered_at, comment, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)").bind("activation-124", "124", "12497", "101", "В работе", "Пи Джи Групп", 2490000, "Оплачено", "2026-08-01T00:00:00.000Z", ""),
+      db.prepare("INSERT OR IGNORE INTO activation_items (id, activation_id, model, license_type, subscription_end, price_cents) VALUES (?, ?, ?, ?, ?, ?)").bind("activation-item-123-service", "activation-123", "aQsi 5Ф", "Сервис обновлений", "2027-08-07", 200000),
+      db.prepare("INSERT OR IGNORE INTO activation_items (id, activation_id, model, license_type, subscription_end, price_cents) VALUES (?, ?, ?, ?, ?, ?)").bind("activation-item-123-extended", "activation-123", "aQsi 5Ф", "Расширенный функционал", "2027-08-07", 200000),
+      db.prepare("INSERT OR IGNORE INTO activation_items (id, activation_id, model, license_type, subscription_end, price_cents) VALUES (?, ?, ?, ?, ?, ?)").bind("activation-item-124-service", "activation-124", "aQsi 5Ф", "Сервис обновлений", "2027-08-01", 200000),
+      db.prepare("INSERT OR IGNORE INTO activation_items (id, activation_id, model, license_type, subscription_end, price_cents) VALUES (?, ?, ?, ?, ?, ?)").bind("activation-item-124-marking", "activation-124", "aQsi 5Ф", "Маркировка", "2027-08-01", 2290000),
+      db.prepare("INSERT OR IGNORE INTO license_keys (id, activation_item_id, serial_number, license_key, status) VALUES (?, ?, ?, '', ?)").bind("license-key-123-service", "activation-item-123-service", "1234567890123456", "Активна"),
+      db.prepare("INSERT OR IGNORE INTO license_keys (id, activation_item_id, serial_number, license_key, status) VALUES (?, ?, ?, '', ?)").bind("license-key-123-extended", "activation-item-123-extended", "1234567890123456", "Активна"),
+      db.prepare("INSERT OR IGNORE INTO license_keys (id, activation_item_id, serial_number, license_key, status) VALUES (?, ?, ?, '', ?)").bind("license-key-124-service", "activation-item-124-service", "9876543210987654", "Активна"),
+      db.prepare("INSERT OR IGNORE INTO license_keys (id, activation_item_id, serial_number, license_key, status) VALUES (?, ?, ?, '', ?)").bind("license-key-124-marking", "activation-item-124-marking", "9876543210987654", "Активна"),
     ];
     await db.batch(seedStatements);
   })();
@@ -188,7 +341,7 @@ export async function initializeDatabase(db: D1DatabaseLike): Promise<void> {
   }
 }
 
-async function ensureUser(db: D1DatabaseLike, actor: RequestActor): Promise<string> {
+export async function ensureUser(db: D1DatabaseLike, actor: RequestActor): Promise<string> {
   const existingByEmail = await db.prepare("SELECT id FROM users WHERE email = ?").bind(actor.email).first<{ id: string }>();
   if (existingByEmail) return existingByEmail.id;
 
@@ -203,8 +356,8 @@ async function ensureUser(db: D1DatabaseLike, actor: RequestActor): Promise<stri
 
 async function accessibleOrganizations(db: D1DatabaseLike, actor: RequestActor, userId: string) {
   const statement = actor.isAdmin
-    ? db.prepare("SELECT id, name, inn, city, phone, email FROM organizations WHERE is_active = 1 ORDER BY name")
-    : db.prepare(`SELECT o.id, o.name, o.inn, o.city, o.phone, o.email
+    ? db.prepare("SELECT id, public_id, name, inn, city, phone, email FROM organizations WHERE is_active = 1 ORDER BY name")
+    : db.prepare(`SELECT o.id, o.public_id, o.name, o.inn, o.city, o.phone, o.email
         FROM organizations o
         JOIN user_organizations uo ON uo.organization_id = o.id
         WHERE uo.user_id = ? AND o.is_active = 1
@@ -219,8 +372,8 @@ async function assertOrganizationAccess(
   organizationId: string,
 ): Promise<OrganizationRow> {
   const statement = actor.isAdmin
-    ? db.prepare("SELECT id, name, inn, city, phone, email FROM organizations WHERE id = ? AND is_active = 1").bind(organizationId)
-    : db.prepare(`SELECT o.id, o.name, o.inn, o.city, o.phone, o.email
+    ? db.prepare("SELECT id, public_id, name, inn, city, phone, email FROM organizations WHERE id = ? AND is_active = 1").bind(organizationId)
+    : db.prepare(`SELECT o.id, o.public_id, o.name, o.inn, o.city, o.phone, o.email
         FROM organizations o
         JOIN user_organizations uo ON uo.organization_id = o.id
         WHERE o.id = ? AND uo.user_id = ? AND o.is_active = 1`).bind(organizationId, userId);
@@ -231,6 +384,7 @@ async function assertOrganizationAccess(
 
 type OrganizationRow = {
   id: string;
+  public_id: string;
   name: string;
   inn: string;
   city: string;
@@ -253,18 +407,25 @@ export async function getCatalog(
       WHERE p.is_active = 1 AND op.is_available = 1
       ORDER BY p.group_name`).all<{ name: string }>()).results?.map((row) => row.name) ?? [];
 
-  if (!organizationId) return { organizations, groups, products: [] };
-  await assertOrganizationAccess(db, actor, userId, organizationId);
-
-  const products = (await db.prepare(`SELECT p.id, p.code, p.name, p.group_name, p.vendor,
-      p.rrp_cents, p.partner_price_cents, op.price_cents
-      FROM products p
-      JOIN organization_products op ON op.product_id = p.id
-      WHERE op.organization_id = ? AND p.is_active = 1 AND op.is_available = 1
-      ORDER BY p.group_name, p.name`).bind(organizationId).all<ProductRow>()).results ?? [];
+  let products: ProductRow[];
+  if (!organizationId) {
+    products = (await db.prepare(`SELECT p.id, p.code, p.name, p.group_name, p.vendor,
+        p.rrp_cents, p.partner_price_cents, p.partner_price_cents AS price_cents
+        FROM products p
+        WHERE p.is_active = 1
+        ORDER BY p.group_name, p.name`).all<ProductRow>()).results ?? [];
+  } else {
+    await assertOrganizationAccess(db, actor, userId, organizationId);
+    products = (await db.prepare(`SELECT p.id, p.code, p.name, p.group_name, p.vendor,
+        p.rrp_cents, p.partner_price_cents, op.price_cents
+        FROM products p
+        JOIN organization_products op ON op.product_id = p.id
+        WHERE op.organization_id = ? AND p.is_active = 1 AND op.is_available = 1
+        ORDER BY p.group_name, p.name`).bind(organizationId).all<ProductRow>()).results ?? [];
+  }
 
   return {
-    organizations,
+    organizations: organizations.map(({ public_id: publicId, ...organization }) => ({ ...organization, publicId })),
     groups,
     products: products.map((product) => ({
       id: product.id,
@@ -293,6 +454,7 @@ type ProductRow = {
 
 export type CreateOrderInput = {
   organizationId?: string;
+  cartId?: string;
   idempotencyKey?: string;
   items?: Array<{ productId?: string; quantity?: number }>;
   contactName?: string;
@@ -302,7 +464,7 @@ export type CreateOrderInput = {
   comment?: string;
 };
 
-function normalizedText(value: unknown, field: string, maxLength: number): string {
+export function normalizedText(value: unknown, field: string, maxLength: number): string {
   if (value === undefined || value === null) return "";
   if (typeof value !== "string") {
     throw new DomainError(400, "INVALID_FIELD", `${field} должен быть строкой`);
@@ -343,11 +505,22 @@ export async function createOrder(
   if (idempotencyKey.length < 8 || idempotencyKey.length > 160) {
     throw new DomainError(400, "INVALID_IDEMPOTENCY_KEY", "Ключ повторной отправки должен содержать от 8 до 160 символов");
   }
+  const cartId = normalizedText(input.cartId, "cartId", 160) || idempotencyKey;
 
   const existing = await db.prepare("SELECT id FROM orders WHERE user_id = ? AND idempotency_key = ?")
     .bind(userId, idempotencyKey)
     .first<{ id: string }>();
   if (existing) return { ...(await getOrder(db, actor, existing.id)), idempotent: true };
+
+  const cart = await db.prepare("SELECT cart_number FROM orders WHERE user_id = ? AND cart_id = ? AND cart_number <> '' LIMIT 1")
+    .bind(userId, cartId)
+    .first<{ cart_number: string }>();
+  let cartNumber = cart?.cart_number ?? "";
+  if (!cartNumber) {
+    const maximum = await db.prepare("SELECT MAX(CAST(cart_number AS INTEGER)) AS value FROM orders WHERE cart_number <> '' AND cart_number NOT GLOB '*[^0-9]*'")
+      .first<{ value: number | null }>();
+    cartNumber = String(Math.max(652, Number(maximum?.value ?? 0)) + 1);
+  }
 
   if (!Array.isArray(input.items) || input.items.length === 0 || input.items.length > 50) {
     throw new DomainError(400, "INVALID_ITEMS", "Заказ должен содержать от 1 до 50 позиций");
@@ -380,6 +553,12 @@ export async function createOrder(
     pricedItems.push({ ...product, quantity, lineTotalCents: checkedLineTotal(product.price_cents, quantity) });
   }
 
+  const vendors = new Set(pricedItems.map((item) => item.vendor));
+  if (vendors.size !== 1) {
+    throw new DomainError(400, "MIXED_VENDOR_ORDER", "Один заказ может содержать товары только одного вендора");
+  }
+  const vendor = [...vendors][0];
+
   let totalCents = 0;
   for (const item of pricedItems) {
     totalCents += item.lineTotalCents;
@@ -399,11 +578,11 @@ export async function createOrder(
 
   const statements: D1PreparedStatementLike[] = [
     db.prepare(`INSERT INTO orders (
-      id, number, organization_id, user_id, status, payment_status, invoice_number,
+      id, number, organization_id, user_id, cart_id, cart_number, vendor, status, payment_status, invoice_number,
       delivery_terms, contact_name, contact_phone, contact_email, comment,
       total_cents, idempotency_key, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, 'В ожидании', NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .bind(orderId, number, organizationId, userId, status, deliveryTerms, contactName, contactPhone, contactEmail, comment, totalCents, idempotencyKey, now, now),
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'В ожидании', NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(orderId, number, organizationId, userId, cartId, cartNumber, vendor, status, deliveryTerms, contactName, contactPhone, contactEmail, comment, totalCents, idempotencyKey, now, now),
     ...pricedItems.map((item) => db.prepare(`INSERT INTO order_items (
       id, order_id, product_id, product_code, product_name, vendor,
       unit_price_cents, quantity, line_total_cents
@@ -434,6 +613,10 @@ type OrderRow = {
   organization_id: string;
   organization_name: string;
   user_id: string;
+  cart_id: string;
+  cart_number: string;
+  vendor: string;
+  resolved_vendor?: string;
   status: OrderStatus;
   payment_status: string;
   invoice_number: string | null;
@@ -452,6 +635,9 @@ function mapOrder(row: OrderRow) {
     id: row.id,
     number: row.number,
     organization: { id: row.organization_id, name: row.organization_name },
+    cartId: row.cart_id,
+    cartNumber: row.cart_number,
+    vendor: row.resolved_vendor || row.vendor,
     status: row.status,
     paymentStatus: row.payment_status,
     invoiceNumber: row.invoice_number,
@@ -491,7 +677,8 @@ export async function listOrders(
     values.push(filters.status);
   }
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
-  const rows = (await db.prepare(`SELECT o.*, org.name AS organization_name
+  const rows = (await db.prepare(`SELECT o.*, org.name AS organization_name,
+      COALESCE(NULLIF(o.vendor, ''), (SELECT MIN(oi.vendor) FROM order_items oi WHERE oi.order_id = o.id), '') AS resolved_vendor
       FROM orders o JOIN organizations org ON org.id = o.organization_id
       ${where} ORDER BY o.created_at DESC`).bind(...values).all<OrderRow>()).results ?? [];
   return rows.map(mapOrder);
@@ -509,7 +696,8 @@ export async function getOrder(
   const accessSql = admin || actor.isAdmin
     ? ""
     : "AND o.user_id = ?";
-  const statement = db.prepare(`SELECT o.*, org.name AS organization_name
+  const statement = db.prepare(`SELECT o.*, org.name AS organization_name,
+      COALESCE(NULLIF(o.vendor, ''), (SELECT MIN(oi.vendor) FROM order_items oi WHERE oi.order_id = o.id), '') AS resolved_vendor
       FROM orders o JOIN organizations org ON org.id = o.organization_id
       WHERE o.id = ? ${accessSql}`);
   const row = admin || actor.isAdmin

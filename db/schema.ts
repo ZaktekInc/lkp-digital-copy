@@ -16,6 +16,7 @@ export const users = sqliteTable("users", {
 
 export const organizations = sqliteTable("organizations", {
   id: text("id").primaryKey(),
+  publicId: text("public_id").notNull().unique(),
   name: text("name").notNull(),
   inn: text("inn").notNull(),
   city: text("city").notNull().default(""),
@@ -86,6 +87,9 @@ export const orders = sqliteTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id),
+    cartId: text("cart_id").notNull().default(""),
+    cartNumber: text("cart_number").notNull().default(""),
+    vendor: text("vendor").notNull().default(""),
     status: text("status").notNull(),
     paymentStatus: text("payment_status").notNull().default("В ожидании"),
     invoiceNumber: text("invoice_number"),
@@ -153,4 +157,93 @@ export const orderStatusHistory = sqliteTable(
       table.createdAt,
     ),
   ],
+);
+
+export const contacts = sqliteTable(
+  "contacts",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    department: text("department").notNull(),
+    position: text("position").notNull(),
+    fullName: text("full_name").notNull(),
+    phone: text("phone").notNull(),
+    email: text("email").notNull(),
+    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [index("idx_contacts_user_active").on(table.userId, table.isActive)],
+);
+
+export const referenceItems = sqliteTable(
+  "reference_items",
+  {
+    id: text("id").primaryKey(),
+    kind: text("kind").notNull(),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("idx_reference_items_kind_code_unique").on(table.kind, table.code),
+    index("idx_reference_items_kind_active").on(table.kind, table.isActive),
+  ],
+);
+
+export const activations = sqliteTable(
+  "activations",
+  {
+    id: text("id").primaryKey(),
+    number: text("number").notNull(),
+    orderNumber: text("order_number").notNull().default(""),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    status: text("status").notNull(),
+    vendor: text("vendor").notNull(),
+    totalCents: integer("total_cents").notNull(),
+    paymentStatus: text("payment_status").notNull(),
+    orderedAt: text("ordered_at").notNull(),
+    comment: text("comment").notNull().default(""),
+    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  },
+  (table) => [
+    uniqueIndex("idx_activations_number_unique").on(table.number),
+    index("idx_activations_organization_ordered_at").on(table.organizationId, table.orderedAt),
+  ],
+);
+
+export const activationItems = sqliteTable(
+  "activation_items",
+  {
+    id: text("id").primaryKey(),
+    activationId: text("activation_id")
+      .notNull()
+      .references(() => activations.id, { onDelete: "cascade" }),
+    model: text("model").notNull(),
+    licenseType: text("license_type").notNull(),
+    subscriptionEnd: text("subscription_end").notNull().default(""),
+    priceCents: integer("price_cents").notNull(),
+  },
+  (table) => [index("idx_activation_items_activation_id").on(table.activationId)],
+);
+
+export const licenseKeys = sqliteTable(
+  "license_keys",
+  {
+    id: text("id").primaryKey(),
+    activationItemId: text("activation_item_id")
+      .notNull()
+      .references(() => activationItems.id, { onDelete: "cascade" }),
+    serialNumber: text("serial_number").notNull(),
+    licenseKey: text("license_key").notNull().default(""),
+    status: text("status").notNull().default("Активна"),
+  },
+  (table) => [index("idx_license_keys_activation_item_id").on(table.activationItemId)],
 );

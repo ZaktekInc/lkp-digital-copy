@@ -2,6 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import BusinessDataPanel from "./business-data-panel";
+import LicensesPanel from "./licenses-panel";
+import ReferencePanel from "./reference-panel";
 
 const statuses = ["Принят", "Ожидает сборки", "Готов к отгрузке", "Отгружен"];
 
@@ -12,11 +15,31 @@ const transitions: Record<string, string[]> = {
   "Отгружен": [],
 };
 
+const sections = [
+  { id: "partners", title: "Партнёры", icon: "👥" },
+  { id: "counterparties", title: "Контрагенты", icon: "🏢" },
+  { id: "orders", title: "Заказы", icon: "🧾" },
+  { id: "products", title: "Список продукции", icon: "📦" },
+  { id: "price-types", title: "Виды цен", icon: "₽" },
+  { id: "partner-statuses", title: "Статусы партнёров", icon: "★" },
+  { id: "vendors", title: "Вендоры", icon: "🏭" },
+  { id: "delivery-terms", title: "Условия поставки", icon: "🚚" },
+  { id: "contract-types", title: "Типы договоров", icon: "📑" },
+  { id: "contracts", title: "Договоры", icon: "✍" },
+  { id: "categories", title: "Категории", icon: "▦" },
+  { id: "product-groups", title: "Товарные группы", icon: "▤" },
+  { id: "order-statuses", title: "Статусы заказов", icon: "✓" },
+  { id: "models", title: "Модели", icon: "▣" },
+  { id: "licenses", title: "Лицензии", icon: "🔑" },
+  { id: "events", title: "События", icon: "⚡" },
+] as const;
+
 type OrderSummary = {
   id: string;
   number: string;
   organization: { id: string; name: string };
   status: string;
+  vendor: string;
   totalCents: number;
   createdAt: string;
 };
@@ -62,6 +85,7 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export default function AdminPanel() {
+  const [section, setSection] = useState<string>("orders");
   const [orders, setOrders] = useState<OrderSummary[]>([]);
   const [selected, setSelected] = useState<OrderDetails | null>(null);
   const [organizationId, setOrganizationId] = useState("");
@@ -147,13 +171,20 @@ export default function AdminPanel() {
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#2764b8]">Цифровая копия ЛКП</p>
-            <h1 className="mt-1 text-2xl font-bold">Админ-панель заказов</h1>
+            <h1 className="mt-1 text-2xl font-bold">Админ-панель</h1>
           </div>
           <Link className="rounded-lg border border-[#b8c7da] px-4 py-2 text-sm font-semibold hover:bg-[#eef3f9]" href="/">Перейти в ЛКП</Link>
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-7xl gap-6 p-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(360px,0.8fr)]">
+      <div className="mx-auto max-w-7xl px-6 pt-6">
+        <h2 className="text-xl font-bold">Справочники и данные</h2>
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
+          {sections.map((item) => <button key={item.id} type="button" onClick={() => setSection(item.id)} aria-pressed={section === item.id} className={`min-h-28 rounded-xl border p-3 text-left shadow-sm transition ${section === item.id ? "border-[#1769c2] bg-[#edf5ff]" : "border-[#dce3ec] bg-white hover:border-[#8db9e8]"}`}><span className="block text-2xl" aria-hidden="true">{item.icon}</span><span className="mt-3 block text-sm font-semibold leading-tight">{item.title}</span></button>)}
+        </div>
+      </div>
+
+      {section === "orders" ? <div className="mx-auto grid max-w-7xl gap-6 p-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(360px,0.8fr)]">
         <section className="rounded-xl border border-[#dce3ec] bg-white shadow-sm">
           <div className="flex flex-wrap gap-3 border-b border-[#e5eaf1] p-4">
             <select className="rounded-lg border border-[#b8c7da] bg-white px-3 py-2" aria-label="Организация" value={organizationId} onChange={(event) => setOrganizationId(event.target.value)}>
@@ -171,10 +202,10 @@ export default function AdminPanel() {
           {loading ? <p className="p-6 text-[#65758b]">Загрузка заказов…</p> : orders.length === 0 ? <p className="p-6 text-[#65758b]">Заказы не найдены.</p> : (
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-left text-sm">
-                <thead className="bg-[#f5f7fa] text-[#526176]"><tr><th className="px-4 py-3">Заказ</th><th className="px-4 py-3">Организация</th><th className="px-4 py-3">Статус</th><th className="px-4 py-3">Сумма</th><th className="px-4 py-3">Дата</th></tr></thead>
+                <thead className="bg-[#f5f7fa] text-[#526176]"><tr><th className="px-4 py-3">Заказ</th><th className="px-4 py-3">Организация</th><th className="px-4 py-3">Вендор</th><th className="px-4 py-3">Статус</th><th className="px-4 py-3">Сумма</th><th className="px-4 py-3">Дата</th></tr></thead>
                 <tbody>{orders.map((order) => (
                   <tr key={order.id} className={`cursor-pointer border-t border-[#edf0f4] hover:bg-[#f7faff] ${selected?.id === order.id ? "bg-[#edf5ff]" : ""}`} onClick={() => void openOrder(order.id)}>
-                    <td className="px-4 py-3 font-semibold text-[#1769c2]">{order.number}</td><td className="px-4 py-3">{order.organization.name}</td><td className="px-4 py-3">{order.status}</td><td className="px-4 py-3 whitespace-nowrap">{money(order.totalCents)}</td><td className="px-4 py-3 whitespace-nowrap">{dateTime(order.createdAt)}</td>
+                    <td className="px-4 py-3 font-semibold text-[#1769c2]">{order.number}</td><td className="px-4 py-3">{order.organization.name}</td><td className="px-4 py-3">{order.vendor}</td><td className="px-4 py-3">{order.status}</td><td className="px-4 py-3 whitespace-nowrap">{money(order.totalCents)}</td><td className="px-4 py-3 whitespace-nowrap">{dateTime(order.createdAt)}</td>
                   </tr>
                 ))}</tbody>
               </table>
@@ -186,14 +217,14 @@ export default function AdminPanel() {
           {!selected ? <p className="text-[#65758b]">Выберите заказ в таблице.</p> : (
             <div className="space-y-5">
               <div><p className="text-sm text-[#65758b]">Заказ</p><h2 className="text-xl font-bold">{selected.number}</h2><p className="mt-1">{selected.organization.name}</p></div>
-              <div className="grid grid-cols-2 gap-3 rounded-lg bg-[#f5f7fa] p-4 text-sm"><div><span className="text-[#65758b]">Статус</span><strong className="block">{selected.status}</strong></div><div><span className="text-[#65758b]">Сумма</span><strong className="block">{money(selected.totalCents)}</strong></div></div>
+              <div className="grid grid-cols-2 gap-3 rounded-lg bg-[#f5f7fa] p-4 text-sm"><div><span className="text-[#65758b]">Статус</span><strong className="block">{selected.status}</strong></div><div><span className="text-[#65758b]">Сумма</span><strong className="block">{money(selected.totalCents)}</strong></div><div className="col-span-2"><span className="text-[#65758b]">Вендор</span><strong className="block">{selected.vendor}</strong></div></div>
               <div><h3 className="mb-2 font-semibold">Сменить статус</h3><div className="flex flex-wrap gap-2">{(transitions[selected.status] || []).map((next) => <button key={next} type="button" disabled={saving} onClick={() => void changeStatus(next)} className="rounded-lg bg-[#1769c2] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{next}</button>)}{(transitions[selected.status] || []).length === 0 && <span className="text-sm text-[#65758b]">Финальный статус</span>}</div></div>
               <div><h3 className="mb-2 font-semibold">Позиции</h3><div className="space-y-2">{selected.items.map((item) => <div key={item.id} className="rounded-lg border border-[#e5eaf1] p-3 text-sm"><strong>{item.name}</strong><div className="mt-1 flex justify-between text-[#65758b]"><span>{item.quantity} × {money(item.unitPriceCents)}</span><span>{money(item.lineTotalCents)}</span></div></div>)}</div></div>
               <div><h3 className="mb-2 font-semibold">История</h3><ol className="space-y-3">{selected.history.map((entry) => <li key={entry.id} className="border-l-2 border-[#8db9e8] pl-3 text-sm"><strong>{entry.toStatus}</strong><div className="text-[#65758b]">{dateTime(entry.changedAt)} · {entry.changedByEmail}</div></li>)}</ol></div>
             </div>
           )}
         </aside>
-      </div>
+      </div> : section === "licenses" ? <div className="mx-auto max-w-7xl p-6"><LicensesPanel /></div> : section === "events" ? <div className="mx-auto max-w-7xl p-6"><section className="rounded-xl border border-[#dce3ec] bg-white p-10 text-center shadow-sm"><span className="text-4xl" aria-hidden="true">⚡</span><h2 className="mt-3 text-xl font-bold">События</h2><p className="mt-2 text-[#65758b]">Событий пока нет.</p></section></div> : section === "counterparties" ? <div className="mx-auto max-w-7xl p-6"><BusinessDataPanel key={section} entity="organizations" title="Контрагенты" /></div> : section === "products" ? <div className="mx-auto max-w-7xl p-6"><BusinessDataPanel key={section} entity="products" title="Список продукции" /></div> : <div className="mx-auto max-w-7xl p-6"><ReferencePanel key={section} kind={section} title={sections.find((item) => item.id === section)?.title || "Справочник"} /></div>}
     </main>
   );
 }

@@ -6,6 +6,7 @@ const html = await readFile(new URL("../public/lkp.html", import.meta.url), "utf
 const dataScript = await readFile(new URL("../public/lkp-data.js", import.meta.url), "utf8");
 const script = await readFile(new URL("../public/lkp.js", import.meta.url), "utf8");
 const style = await readFile(new URL("../public/lkp.css", import.meta.url), "utf8");
+const adminPanel = await readFile(new URL("../app/admin/admin-panel.tsx", import.meta.url), "utf8");
 const source = `${html}\n${style}\n${dataScript}\n${script}`;
 
 test("keeps the main LKP prototype script syntactically valid", () => {
@@ -63,7 +64,49 @@ test("connects the existing LKP screens to the protected D1 order flow", () => {
   assert.match(source, /visibleOrderRows/);
   assert.match(source, /visibleActivations/);
   assert.match(source, /organizationAccessLoaded/);
-  assert.match(source, /filter\(order => !savedDetails\[order\[0\]\]\?\.serverId\)/);
+  assert.match(source, /filter\(order => !savedDetails\[order\[0\]\]\?\.serverId && !isBrowserProductOrder\(order\[0\]\)\)/);
   assert.match(source, /ordersLoadError/);
   assert.match(source, /orderDetailsError/);
+});
+
+test("loads persistent contacts, shows the full catalog and splits checkout by organization and vendor", () => {
+  assert.match(source, /serverApi\("\/api\/contacts"/);
+  assert.match(source, /createServerContact/);
+  assert.match(source, /contactForm\.dataset\.submitBound !== "true"/);
+  assert.match(source, /contactForm\.dataset\.submitBound = "true"/);
+  assert.match(source, /refreshContacts\(\)/);
+  assert.match(source, /replaceCatalogProducts\(payload/);
+  assert.match(source, /const groupKey = `\$\{item\.org\}\|\$\{item\.vendor\}`/);
+  assert.match(source, /cartId: pendingCheckoutKey/);
+  assert.match(source, /idempotencyKey: `\$\{pendingCheckoutKey\}:\$\{organizationId\}:\$\{group\.vendor\}`/);
+  assert.match(source, /serverOrderNumbers\.has\(order\[0\]\) \|\| isOrganizationVisible/);
+  assert.match(source, /replaceServerProductOrders\(Array\.isArray\(payload\.orders\) \? payload\.orders : \[\]\)/);
+  assert.match(source, /productNumbers\.forEach\(removeServerOrder\)/);
+  assert.doesNotMatch(source, /receivedNumbers/);
+  assert.match(source, /isBrowserProductOrder/);
+  assert.match(source, /if \(hadPersistentProductOrders\) saveState\(\)/);
+  assert.doesNotMatch(source, /\["12518", "СЧ-9055"/);
+  assert.doesNotMatch(source, /\["12497", "СЧ-9024"/);
+  assert.match(source, /cartNumber: order\.cartNumber \|\| ""/);
+  assert.match(source, /number: orderDetails\[createdOrders\[0\]\]\?\.cartNumber/);
+  assert.match(source, /\/api\/orders\/\$\{encodeURIComponent\(details\.serverId\)\}/);
+});
+
+test("keeps status history out of the partner order card", () => {
+  assert.doesNotMatch(script, /История статусов/);
+  assert.doesNotMatch(script, /changedByEmail/);
+});
+
+test("admin data section keeps all 16 tiles in fixed order with an adaptive grid", () => {
+  const titles = [
+    "Партнёры", "Контрагенты", "Заказы", "Список продукции", "Виды цен", "Статусы партнёров", "Вендоры", "Условия поставки",
+    "Типы договоров", "Договоры", "Категории", "Товарные группы", "Статусы заказов", "Модели", "Лицензии", "События",
+  ];
+  let cursor = -1;
+  titles.forEach((title) => {
+    const next = adminPanel.indexOf(`title: "${title}"`);
+    assert.ok(next > cursor, `${title} must retain its position`);
+    cursor = next;
+  });
+  assert.match(adminPanel, /grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8/);
 });
