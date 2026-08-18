@@ -1,10 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import BusinessDataPanel from "./business-data-panel";
 import LicensesPanel from "./licenses-panel";
 import ReferencePanel from "./reference-panel";
+
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 const statuses = ["Принят", "Ожидает сборки", "Готов к отгрузке", "Отгружен"];
 
@@ -177,7 +178,7 @@ export default function AdminPanel() {
             <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#2764b8]">Цифровая копия ЛКП</p>
             <h1 className="mt-1 text-2xl font-bold">Админ-панель</h1>
           </div>
-          <div className="flex flex-wrap gap-2"><button className="rounded-lg border border-amber-300 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-50" type="button" onClick={resetDemoData}>Восстановить демоданные</button><Link className="rounded-lg border border-[#b8c7da] px-4 py-2 text-sm font-semibold hover:bg-[#eef3f9]" href="/">Перейти в ЛКП</Link></div>
+          <div className="flex flex-wrap gap-2"><button className="rounded-lg border border-amber-300 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-50" type="button" onClick={resetDemoData}>Восстановить демоданные</button><a className="rounded-lg border border-[#b8c7da] px-4 py-2 text-sm font-semibold hover:bg-[#eef3f9]" href={`${basePath}/`}>Перейти в ЛКП</a></div>
         </div>
       </header>
 

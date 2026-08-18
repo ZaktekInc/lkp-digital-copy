@@ -13,16 +13,21 @@ const adminStyle = await readFile(new URL("../app/globals.css", import.meta.url)
 const adminPanel = await readFile(new URL("../app/admin/admin-panel.tsx", import.meta.url), "utf8");
 const licensesPanel = await readFile(new URL("../app/admin/licenses-panel.tsx", import.meta.url), "utf8");
 const referencePanel = await readFile(new URL("../app/admin/reference-panel.tsx", import.meta.url), "utf8");
+const nextConfig = await readFile(new URL("../next.config.ts", import.meta.url), "utf8");
+const viteConfig = await readFile(new URL("../vite.config.ts", import.meta.url), "utf8");
+const homePage = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+const adminPage = await readFile(new URL("../app/admin/page.tsx", import.meta.url), "utf8");
+const rootLayout = await readFile(new URL("../app/layout.tsx", import.meta.url), "utf8");
 const source = `${html}\n${style}\n${demoScript}\n${storageScript}\n${businessScript}\n${dataScript}\n${script}`;
 
 test("keeps the main LKP prototype script syntactically valid", () => {
-  assert.match(source, /<script src="\/lkp-data\.js"><\/script>/);
-  assert.match(source, /<script src="\/lkp-browser-storage\.js"><\/script>/);
-  assert.match(source, /<script src="\/lkp-browser-business\.js"><\/script>/);
+  assert.match(source, /<script src="\.\/lkp-data\.js"><\/script>/);
+  assert.match(source, /<script src="\.\/lkp-browser-storage\.js"><\/script>/);
+  assert.match(source, /<script src="\.\/lkp-browser-business\.js"><\/script>/);
   assert.doesNotThrow(() => new Function(demoScript));
   assert.doesNotThrow(() => new Function(storageScript));
   assert.doesNotThrow(() => new Function(businessScript));
-  assert.match(source, /<script src="\/lkp\.js"><\/script>/);
+  assert.match(source, /<script src="\.\/lkp\.js"><\/script>/);
   assert.doesNotThrow(() => new Function(dataScript));
   assert.doesNotThrow(() => new Function(script));
 });
@@ -66,6 +71,21 @@ test("keeps invoices, permanent-partner prices and paid activation order status 
   assert.match(source, /rrpCents: 3000000, partnerPriceCents: 2500000, priceCents: 2300000/);
   assert.match(source, /pricePopover\(p\)/);
   assert.match(source, /class="catalog-price">Ваша цена<\/th><th class="catalog-quantity">Количество/);
+});
+
+test("keeps production export static and compatible with the GitHub Pages base path", () => {
+  assert.match(nextConfig, /output: "export"/);
+  assert.match(nextConfig, /trailingSlash: true/);
+  assert.match(viteConfig, /NEXT_PUBLIC_BASE_PATH/);
+  assert.match(viteConfig, /base: pagesBasePath \? `\$\{pagesBasePath\}\//);
+  assert.match(homePage, /src=\{`\$\{basePath\}\/lkp\.html`\}/);
+  assert.match(homePage, /export const dynamic = "force-static"/);
+  assert.match(adminPage, /export const dynamic = "force-static"/);
+  assert.match(adminPanel, /href=\{`\$\{basePath\}\/`\}/);
+  assert.match(rootLayout, /src=\{`\$\{basePath\}\/lkp-demo-data\.js`\}/);
+  assert.match(rootLayout, /export const dynamic = "force-static"/);
+  assert.match(html, /href="\.\/lkp\.css"/);
+  assert.doesNotMatch(html, /(?:src|href)="\/lkp/);
 });
 
 test("connects the existing LKP screens to the shared browser order flow", () => {

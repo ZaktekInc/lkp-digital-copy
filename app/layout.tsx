@@ -4,6 +4,10 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
+export const dynamic = "force-static";
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -21,8 +25,8 @@ export const metadata: Metadata = {
     "codex-preview": "development",
   },
   icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
+    icon: `${basePath}/favicon.svg`,
+    shortcut: `${basePath}/favicon.svg`,
   },
 };
 
@@ -34,9 +38,9 @@ export default function RootLayout({
   return (
     <html lang="ru">
       <head>
-        <script src="/lkp-demo-data.js" />
-        <script src="/lkp-browser-storage.js" />
-        <script src="/lkp-browser-business.js" />
+        <script src={`${basePath}/lkp-demo-data.js`} />
+        <script src={`${basePath}/lkp-browser-storage.js`} />
+        <script src={`${basePath}/lkp-browser-business.js`} />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
