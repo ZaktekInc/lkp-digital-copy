@@ -1,3 +1,5 @@
+/* Browser storage must initialize synchronously before client components hydrate. */
+/* eslint-disable @next/next/no-sync-scripts */
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -31,6 +33,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ru">
+      <head>
+        <script src="/lkp-demo-data.js" />
+        <script src="/lkp-browser-storage.js" />
+        <script src="/lkp-browser-business.js" />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >

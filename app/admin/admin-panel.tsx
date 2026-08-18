@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import BusinessDataPanel from "./business-data-panel";
 import LicensesPanel from "./licenses-panel";
 import ReferencePanel from "./reference-panel";
@@ -37,6 +37,7 @@ const sections = [
 type OrderSummary = {
   id: string;
   number: string;
+  type: string;
   organization: { id: string; name: string };
   status: string;
   vendor: string;
@@ -77,11 +78,26 @@ const dateTime = (value: string) => new Intl.DateTimeFormat("ru-RU", {
   timeStyle: "short",
 }).format(new Date(value));
 
-async function api<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
-  const payload = (await response.json()) as T & { error?: string };
-  if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
-  return payload;
+function browserOrders(): OrderDetails[] {
+  const organizationNames = new Map(window.LkpBrowserStore.getOrganizations({ includeInactive: true }).map((item) => [item.id, item.name]));
+  return window.LkpBrowserStore.getOrders().map((order) => ({
+    id: order.number,
+    number: order.number,
+    type: order.type || "Покупка товара",
+    organization: { id: order.organizationId, name: organizationNames.get(order.organizationId) || "Архивная организация" },
+    status: order.status,
+    vendor: order.vendor,
+    totalCents: order.totalCents,
+    createdAt: order.createdAt,
+    paymentStatus: order.paymentStatus,
+    contactName: order.contactName,
+    contactPhone: order.contactPhone,
+    contactEmail: order.contactEmail,
+    deliveryTerms: order.deliveryTerms,
+    comment: order.comment,
+    items: order.items.map((item, index) => ({ id: `${order.number}-${index}`, code: item.productCode || item.code || "", name: item.name, vendor: item.vendor, quantity: item.quantity, unitPriceCents: item.unitPriceCents, lineTotalCents: item.lineTotalCents })),
+    history: order.history.map((entry, index) => ({ id: `${order.number}-${index}`, fromStatus: entry.fromStatus, toStatus: entry.toStatus, changedAt: entry.changedAt, changedByEmail: entry.changedBy })),
+  }));
 }
 
 export default function AdminPanel() {
@@ -100,69 +116,57 @@ export default function AdminPanel() {
     return [...values.entries()].sort((a, b) => a[1].localeCompare(b[1], "ru"));
   }, [orders]);
 
-  async function loadOrders() {
+  const loadOrders = useCallback(() => {
     setLoading(true);
     setError("");
-    const params = new URLSearchParams();
-    if (organizationId) params.set("organizationId", organizationId);
-    if (status) params.set("status", status);
     try {
-      const payload = await api<{ orders: OrderSummary[] }>(`/api/admin/orders?${params}`);
-      setOrders(payload.orders);
-      if (selected && !payload.orders.some((order) => order.id === selected.id)) setSelected(null);
+      const next = browserOrders().filter((order) => (!organizationId || order.organization.id === organizationId) && (!status || order.status === status));
+      setOrders(next);
+      setSelected((current) => current ? next.find((order) => order.id === current.id) || null : null);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Не удалось загрузить заказы");
     } finally {
       setLoading(false);
     }
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-    const params = new URLSearchParams();
-    if (organizationId) params.set("organizationId", organizationId);
-    if (status) params.set("status", status);
-    void api<{ orders: OrderSummary[] }>(`/api/admin/orders?${params}`).then((payload) => {
-      if (cancelled) return;
-      setOrders(payload.orders);
-      setSelected((current) => current && payload.orders.some((order) => order.id === current.id) ? current : null);
-      setError("");
-      setLoading(false);
-    }).catch((requestError) => {
-      if (cancelled) return;
-      setError(requestError instanceof Error ? requestError.message : "Не удалось загрузить заказы");
-      setLoading(false);
-    });
-    return () => { cancelled = true; };
   }, [organizationId, status]);
 
-  async function openOrder(id: string) {
+  useEffect(() => {
+    const initialLoad = window.setTimeout(loadOrders, 0);
+    const unsubscribe = window.LkpBrowserStore.subscribe(loadOrders);
+    return () => { window.clearTimeout(initialLoad); unsubscribe(); };
+  }, [loadOrders]);
+
+  function openOrder(id: string) {
     setError("");
     try {
-      const payload = await api<{ order: OrderDetails }>(`/api/admin/orders/${encodeURIComponent(id)}`);
-      setSelected(payload.order);
+      const order = browserOrders().find((item) => item.id === id);
+      if (!order) throw new Error("Заказ не найден");
+      setSelected(order);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Не удалось открыть заказ");
     }
   }
 
-  async function changeStatus(nextStatus: string) {
+  function changeStatus(nextStatus: string) {
     if (!selected) return;
     setSaving(true);
     setError("");
     try {
-      const payload = await api<{ order: OrderDetails }>(`/api/admin/orders/${encodeURIComponent(selected.id)}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ status: nextStatus }),
-      });
-      setSelected(payload.order);
-      setOrders((current) => current.map((order) => order.id === payload.order.id ? { ...order, status: payload.order.status } : order));
+      window.LkpBrowserStore.updateOrder(selected.number, { status: nextStatus });
+      const updated = browserOrders().find((item) => item.number === selected.number);
+      if (!updated) throw new Error("Заказ не найден");
+      setSelected(updated);
+      setOrders((current) => current.map((order) => order.id === updated.id ? { ...order, status: updated.status } : order));
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Не удалось изменить статус");
     } finally {
       setSaving(false);
     }
+  }
+
+  function resetDemoData() {
+    if (!window.confirm("Восстановить исходные демоданные? Текущие изменения цифровой копии будут удалены.")) return;
+    window.LkpBrowserStore.resetDemoData();
   }
 
   return (
@@ -173,7 +177,7 @@ export default function AdminPanel() {
             <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#2764b8]">Цифровая копия ЛКП</p>
             <h1 className="mt-1 text-2xl font-bold">Админ-панель</h1>
           </div>
-          <Link className="rounded-lg border border-[#b8c7da] px-4 py-2 text-sm font-semibold hover:bg-[#eef3f9]" href="/">Перейти в ЛКП</Link>
+          <div className="flex flex-wrap gap-2"><button className="rounded-lg border border-amber-300 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-50" type="button" onClick={resetDemoData}>Восстановить демоданные</button><Link className="rounded-lg border border-[#b8c7da] px-4 py-2 text-sm font-semibold hover:bg-[#eef3f9]" href="/">Перейти в ЛКП</Link></div>
         </div>
       </header>
 
@@ -195,17 +199,17 @@ export default function AdminPanel() {
               <option value="">Все статусы</option>
               {statuses.map((value) => <option key={value} value={value}>{value}</option>)}
             </select>
-            <button className="rounded-lg bg-[#1769c2] px-4 py-2 font-semibold text-white hover:bg-[#1059a7]" type="button" onClick={() => void loadOrders()}>Обновить</button>
+            <button className="rounded-lg bg-[#1769c2] px-4 py-2 font-semibold text-white hover:bg-[#1059a7]" type="button" onClick={loadOrders}>Обновить</button>
           </div>
 
           {error && <div className="m-4 rounded-lg border border-red-200 bg-red-50 p-3 text-red-800" role="alert">{error}</div>}
           {loading ? <p className="p-6 text-[#65758b]">Загрузка заказов…</p> : orders.length === 0 ? <p className="p-6 text-[#65758b]">Заказы не найдены.</p> : (
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-left text-sm">
-                <thead className="bg-[#f5f7fa] text-[#526176]"><tr><th className="px-4 py-3">Заказ</th><th className="px-4 py-3">Организация</th><th className="px-4 py-3">Вендор</th><th className="px-4 py-3">Статус</th><th className="px-4 py-3">Сумма</th><th className="px-4 py-3">Дата</th></tr></thead>
+                <thead className="bg-[#f5f7fa] text-[#526176]"><tr><th className="px-4 py-3">Заказ</th><th className="px-4 py-3">Тип</th><th className="px-4 py-3">Организация</th><th className="px-4 py-3">Вендор</th><th className="px-4 py-3">Статус</th><th className="px-4 py-3">Сумма</th><th className="px-4 py-3">Дата</th></tr></thead>
                 <tbody>{orders.map((order) => (
-                  <tr key={order.id} className={`cursor-pointer border-t border-[#edf0f4] hover:bg-[#f7faff] ${selected?.id === order.id ? "bg-[#edf5ff]" : ""}`} onClick={() => void openOrder(order.id)}>
-                    <td className="px-4 py-3 font-semibold text-[#1769c2]">{order.number}</td><td className="px-4 py-3">{order.organization.name}</td><td className="px-4 py-3">{order.vendor}</td><td className="px-4 py-3">{order.status}</td><td className="px-4 py-3 whitespace-nowrap">{money(order.totalCents)}</td><td className="px-4 py-3 whitespace-nowrap">{dateTime(order.createdAt)}</td>
+                  <tr key={order.id} className={`cursor-pointer border-t border-[#edf0f4] hover:bg-[#f7faff] ${selected?.id === order.id ? "bg-[#edf5ff]" : ""}`} onClick={() => openOrder(order.id)}>
+                    <td className="px-4 py-3 font-semibold text-[#1769c2]">{order.number}</td><td className="px-4 py-3">{order.type}</td><td className="px-4 py-3">{order.organization.name}</td><td className="px-4 py-3">{order.vendor}</td><td className="px-4 py-3">{order.status}</td><td className="px-4 py-3 whitespace-nowrap">{money(order.totalCents)}</td><td className="px-4 py-3 whitespace-nowrap">{dateTime(order.createdAt)}</td>
                   </tr>
                 ))}</tbody>
               </table>
@@ -217,8 +221,8 @@ export default function AdminPanel() {
           {!selected ? <p className="text-[#65758b]">Выберите заказ в таблице.</p> : (
             <div className="space-y-5">
               <div><p className="text-sm text-[#65758b]">Заказ</p><h2 className="text-xl font-bold">{selected.number}</h2><p className="mt-1">{selected.organization.name}</p></div>
-              <div className="grid grid-cols-2 gap-3 rounded-lg bg-[#f5f7fa] p-4 text-sm"><div><span className="text-[#65758b]">Статус</span><strong className="block">{selected.status}</strong></div><div><span className="text-[#65758b]">Сумма</span><strong className="block">{money(selected.totalCents)}</strong></div><div className="col-span-2"><span className="text-[#65758b]">Вендор</span><strong className="block">{selected.vendor}</strong></div></div>
-              <div><h3 className="mb-2 font-semibold">Сменить статус</h3><div className="flex flex-wrap gap-2">{(transitions[selected.status] || []).map((next) => <button key={next} type="button" disabled={saving} onClick={() => void changeStatus(next)} className="rounded-lg bg-[#1769c2] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{next}</button>)}{(transitions[selected.status] || []).length === 0 && <span className="text-sm text-[#65758b]">Финальный статус</span>}</div></div>
+              <div className="grid grid-cols-2 gap-3 rounded-lg bg-[#f5f7fa] p-4 text-sm"><div><span className="text-[#65758b]">Статус</span><strong className="block">{selected.status}</strong></div><div><span className="text-[#65758b]">Сумма</span><strong className="block">{money(selected.totalCents)}</strong></div><div><span className="text-[#65758b]">Тип</span><strong className="block">{selected.type}</strong></div><div><span className="text-[#65758b]">Вендор</span><strong className="block">{selected.vendor}</strong></div></div>
+              <div><h3 className="mb-2 font-semibold">Сменить статус</h3><div className="flex flex-wrap gap-2">{(transitions[selected.status] || []).map((next) => <button key={next} type="button" disabled={saving} onClick={() => changeStatus(next)} className="rounded-lg bg-[#1769c2] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{next}</button>)}{(transitions[selected.status] || []).length === 0 && <span className="text-sm text-[#65758b]">Финальный статус</span>}</div></div>
               <div><h3 className="mb-2 font-semibold">Позиции</h3><div className="space-y-2">{selected.items.map((item) => <div key={item.id} className="rounded-lg border border-[#e5eaf1] p-3 text-sm"><strong>{item.name}</strong><div className="mt-1 flex justify-between text-[#65758b]"><span>{item.quantity} × {money(item.unitPriceCents)}</span><span>{money(item.lineTotalCents)}</span></div></div>)}</div></div>
               <div><h3 className="mb-2 font-semibold">История</h3><ol className="space-y-3">{selected.history.map((entry) => <li key={entry.id} className="border-l-2 border-[#8db9e8] pl-3 text-sm"><strong>{entry.toStatus}</strong><div className="text-[#65758b]">{dateTime(entry.changedAt)} · {entry.changedByEmail}</div></li>)}</ol></div>
             </div>

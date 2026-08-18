@@ -1,3 +1,5 @@
+/* Global declarations in this classic script are consumed by lkp.js. */
+/* eslint-disable @typescript-eslint/no-unused-vars */
       const root = document.getElementById("lkp-current-map");
       const content = root.querySelector("#lkp-content");
       const shell = root.querySelector(".lkp-shell");
@@ -9,261 +11,232 @@
       let pendingActivationComment = "";
       let pendingActivationDeficit = 0;
 
-      const activationDevices = [
-        {
-          serial: "1234567890123456", model: "aQsi 5Ф",
-          licenses: {
-            service: { available: true, selected: false, current: "Текущая до 05.10.2026", currentState: "expiring", next: "Новая до 05.10.2027", price: 2000 },
-            marking: { available: true, selected: false, current: "Нет текущей подписки", currentState: "none", next: "Новая до 10.08.2027", price: 500 },
-            extended: { available: false, selected: false, current: "Недоступно", next: "", price: 0 }
-          }
-        },
-        {
-          serial: "9876543210987654", model: "aQsi 6Ф",
-          licenses: {
-            service: { available: true, selected: false, current: "Истекла 01.08.2026", currentState: "expired", next: "Новая до 10.08.2027", price: 2000 },
-            marking: { available: true, selected: false, current: "Текущая до 01.12.2026", currentState: "active", next: "Новая до 01.12.2027", price: 500 },
-            extended: { available: true, selected: false, current: "Текущая до 10.03.2027", currentState: "active", over180: true, next: "Новая до 10.03.2028", price: 1000 }
-          }
-        }
-      ];
+      const browserStore = window.LkpBrowserStore;
+      const browserBusiness = window.LkpBusiness;
+      const clone = value => JSON.parse(JSON.stringify(value));
+      const activationDevices = [];
+      const organizations = [];
+      const contacts = [];
+      const orders = [];
+      const orderTypes = {};
+      const activations = [];
+      const contracts = [];
+      const products = [];
+      const quantities = {};
+      const cart = [];
 
-      const organizations = [
-        ["101", 'ООО "ЗОЛОТОЙ СТАНДАРТ"', "7724827983", "Санкт-Петербург", "3", "+7 800 555-35-36", "example1@mail.ru"],
-        ["102", "ООО Бета", "7812345678", "Санкт-Петербург", "2", "+7 812 000-00-02", "info@beta.example"]
-      ];
-      const contacts = [
-        ["Закупки", "Руководитель", "Иванов Иван", "+7 900 100-10-10", "ivanov@example.ru"],
-        ["ИТ", "Инженер", "Петров Петр", "+7 900 200-20-20", "petrov@example.ru"]
-      ];
-      const orders = [
-        ["12540", "ПГ-362", 'ООО "ЗОЛОТОЙ СТАНДАРТ"', "06.08.2026", "Отгружен", "Предоплата 100%", "4 000 ₽", "—", "Колесников В. В."],
-        ["12480", "ПГ-098", "ООО Бета", "30.07.2026", "Отгружен", "Предоплата 100%", "10 000 ₽", "✓", "Петров Петр"]
-      ];
-      const orderTypes = { "12540": "Активация лицензий", "12480": "Авансовый платеж" };
-      const activations = [
-        ["123", "12540", 'ООО "ЗОЛОТОЙ СТАНДАРТ"', "Выполнена", "Пэй Киоск", "2", "4 000 ₽", "—", "06.08.2026", "123"],
-        ["124", "—", 'ООО "ЗОЛОТОЙ СТАНДАРТ"', "В работе", "Пи Джи Групп", "2", "24 900 ₽", "✓", "01.08.2026", "—"]
-      ];
-      const products = [
-        { code: "AQSI-5F", name: "ПАК aQsi 5Ф", group: "ПАК", vendor: "Пи Джи Групп", rrp: 30000, partnerPrice: 25000, price: 23000, orgs: ['ООО "ЗОЛОТОЙ СТАНДАРТ"', "ООО Бета"] },
-        { code: "AQSI-6F", name: "ПАК aQsi 6Ф", group: "ПАК", vendor: "Пи Джи Групп", rrp: 36000, partnerPrice: 31000, price: 28900, orgs: ['ООО "ЗОЛОТОЙ СТАНДАРТ"', "ООО Бета"] },
-        { code: "AQSI-13", name: "ПАК aQsi 13", group: "ПАК", vendor: "Пи Джи Групп", rrp: 39000, partnerPrice: 34000, price: 31900, orgs: ['ООО "ЗОЛОТОЙ СТАНДАРТ"'] },
-        { code: "AQSI-PS-5F", name: 'Адаптер питания для "aQsi-5Ф"', group: "Аксессуары", vendor: "Пи Джи Групп", rrp: 2500, partnerPrice: 2100, price: 1900, orgs: ['ООО "ЗОЛОТОЙ СТАНДАРТ"', "ООО Бета"] },
-        { code: "AQSI-BAT-5F", name: 'Аккумулятор "для aQsi 5Ф"', group: "Аксессуары", vendor: "Пи Джи Групп", rrp: 3500, partnerPrice: 3000, price: 2700, orgs: ['ООО "ЗОЛОТОЙ СТАНДАРТ"', "ООО Бета"] },
-        { code: "RR-01F", name: "ККТ РР-01Ф", group: "ККТ", vendor: "РР-Электро", rrp: 27000, partnerPrice: 23500, price: 21800, orgs: ['ООО "ЗОЛОТОЙ СТАНДАРТ"', "ООО Бета"] },
-        { code: "RR-04F", name: "ККТ РР-04Ф", group: "ККТ", vendor: "РР-Электро", rrp: 32000, partnerPrice: 28500, price: 26400, orgs: ['ООО "ЗОЛОТОЙ СТАНДАРТ"'] }
-      ];
-      const quantities = Object.fromEntries(products.map(p => [p.code, 1]));
-      const cart = [
-        { key: 'ООО "ЗОЛОТОЙ СТАНДАРТ"|Пи Джи Групп|AQSI-5F', org: 'ООО "ЗОЛОТОЙ СТАНДАРТ"', vendor: "Пи Джи Групп", code: "AQSI-5F", name: "ПАК aQsi 5Ф", price: 23000, qty: 2 },
-        { key: 'ООО "ЗОЛОТОЙ СТАНДАРТ"|Пи Джи Групп|AQSI-PS-5F', org: 'ООО "ЗОЛОТОЙ СТАНДАРТ"', vendor: "Пи Джи Групп", code: "AQSI-PS-5F", name: 'Адаптер питания для "aQsi-5Ф"', price: 1900, qty: 2 },
-        { key: 'ООО "ЗОЛОТОЙ СТАНДАРТ"|РР-Электро|RR-01F', org: 'ООО "ЗОЛОТОЙ СТАНДАРТ"', vendor: "РР-Электро", code: "RR-01F", name: "ККТ РР-01Ф", price: 21800, qty: 1 }
-      ];
-
-      const storageKey = "lkp-digital-copy-state-v2";
       const orderDetails = {};
       const activationDetails = {};
       const createdCarts = [];
-      const balances = { 'ООО "ЗОЛОТОЙ СТАНДАРТ"': 1000, "ООО Бета": 0 };
-      const serverOrderNumbers = new Set();
+      const balances = {};
+      const storedOrderNumbers = new Set();
       const catalogState = { loading: true, error: "", selectedOrg: "", selectedGroup: "" };
       let activePage = "catalog";
       let activeContext = null;
+      const restorablePages = new Set(["login", "profile", "organization", "contact", "orders", "order", "activations", "activation", "activate-org", "activate-offer", "activate", "catalog", "cart", "cart-result"]);
       let organizationAccessLoaded = false;
       let catalogRequestId = 0;
       let ordersLoadError = "";
       let orderDetailsError = "";
       let contactsLoadError = "";
       let checkoutInProgress = false;
-      let pendingCheckoutKey = "";
-      function loadState() {
-        try {
-          const saved = JSON.parse(localStorage.getItem(storageKey) || "null");
-          if (!saved || typeof saved !== "object") return;
-          const savedDetails = saved.orderDetails || {};
-          const savedTypes = saved.orderTypes || {};
-          const isBrowserProductOrder = number => savedTypes[number] === "Покупка товара" || savedDetails[number]?.type === "Покупка товара";
-          const hadPersistentProductOrders = (saved.orders || []).some(order => isBrowserProductOrder(order[0])) || Object.keys(savedDetails).some(isBrowserProductOrder);
-          (saved.orders || []).filter(order => !savedDetails[order[0]]?.serverId && !isBrowserProductOrder(order[0])).forEach(order => { if (!orders.some(existing => existing[0] === order[0])) orders.unshift(order); });
-          Object.assign(orderTypes, Object.fromEntries(Object.entries(savedTypes).filter(([number]) => !savedDetails[number]?.serverId && !isBrowserProductOrder(number))));
-          Object.assign(orderDetails, Object.fromEntries(Object.entries(savedDetails).filter(([number, details]) => !details?.serverId && !isBrowserProductOrder(number))));
-          (saved.activations || []).forEach(activation => { if (!activations.some(existing => existing[0] === activation[0])) activations.unshift(activation); });
-          Object.assign(activationDetails, saved.activationDetails || {});
-          (saved.carts || []).filter(savedCart => !savedCart?.server).forEach(savedCart => createdCarts.push(savedCart));
-          if (Array.isArray(saved.cart)) cart.splice(0, cart.length, ...saved.cart);
-          cart.forEach(item => {
-            const product = products.find(candidate => candidate.code === item.code);
-            if (product) item.price = product.price;
-          });
-          Object.assign(quantities, saved.quantities || {});
-          Object.assign(balances, saved.balances || {});
-          orders.forEach(order => {
-            const details = orderDetails[order[0]];
-            if (details?.invoice) order[1] = details.invoice;
-            else if (details && order[1]) details.invoice = order[1];
-            const type = details?.type || orderTypes[order[0]];
-            const paid = details?.payment === "Оплачено" || order[7] === "✓";
-            if (type === "Активация лицензий" && paid) {
-              order[4] = "Отгружен";
-              if (details) details.status = "Отгружен";
-            }
-          });
-          if (hadPersistentProductOrders) saveState();
-        } catch {}
+
+      function navigationLocation() {
+        try { return window.parent && window.parent !== window ? window.parent.location : window.location; }
+        catch { return window.location; }
       }
+
+      function navigationHistory() {
+        try { return window.parent && window.parent !== window ? window.parent.history : window.history; }
+        catch { return window.history; }
+      }
+
+      function navigationToken(page, context) {
+        if (page === "order" || page === "activation") return context?.[0] || "";
+        if (page === "organization") return organizations[Number(context)]?.[7] || "";
+        if (page === "contact") return Number.isInteger(Number(context)) ? String(context) : "";
+        if (page === "cart-result") return context?.number || "";
+        if (page === "profile") return typeof context === "string" ? context : "";
+        if (page === "activate" || page === "activate-offer") return selectedLicenseOrg || "";
+        return "";
+      }
+
+      function persistNavigation(page, context) {
+        if (!restorablePages.has(page)) return;
+        const params = new URLSearchParams({ lkp: page });
+        const token = navigationToken(page, context);
+        if (token) params.set("context", token);
+        const location = navigationLocation();
+        const hash = `#${params.toString()}`;
+        if (location.hash !== hash) navigationHistory().replaceState(null, "", `${location.pathname}${location.search}${hash}`);
+      }
+
+      function restoreNavigation() {
+        const params = new URLSearchParams(navigationLocation().hash.replace(/^#/, ""));
+        const page = params.get("lkp") || "catalog";
+        const token = params.get("context") || "";
+        if (!restorablePages.has(page)) return { page: "catalog", context: null };
+        if (page === "order") return orders.some(order => order[0] === token) ? { page, context: orders.find(order => order[0] === token) } : { page: "orders", context: null };
+        if (page === "activation") return activations.some(item => item[0] === token) ? { page, context: activations.find(item => item[0] === token) } : { page: "activations", context: null };
+        if (page === "organization") {
+          const index = organizations.findIndex(item => item[7] === token);
+          return index >= 0 ? { page, context: index } : { page: "profile", context: null };
+        }
+        if (page === "contact") {
+          const index = Number.parseInt(token, 10);
+          return Number.isInteger(index) && contacts[index] ? { page, context: index } : { page: "profile", context: "contacts" };
+        }
+        if (page === "cart-result") return { page, context: createdCarts.find(item => item.number === token) || null };
+        if ((page === "activate" || page === "activate-offer") && token) selectedLicenseOrg = token;
+        return { page, context: page === "profile" ? token : page === "activate" ? selectedLicenseOrg : null };
+      }
+      function syncLicenseData(organizationRecords) {
+        const namesById = new Map(organizationRecords.map(org => [org.id, org.name]));
+        activationDevices.splice(0, activationDevices.length, ...browserStore.getLicenses().map(device => {
+          const next = clone(device);
+          Object.values(next.licenses).forEach(license => { license.selected = false; });
+          return next;
+        }));
+        const records = browserStore.getActivations();
+        activations.splice(0, activations.length, ...records.map(item => [
+          item.number, item.orderNumber || "—", namesById.get(item.organizationId) || "Архивная организация", item.status, item.vendor,
+          String(item.items.length), rub(item.totalCents / 100), item.paymentStatus === "Оплачено" ? "✓" : "—",
+          new Intl.DateTimeFormat("ru-RU").format(new Date(item.orderedAt)), item.comment || "—"
+        ]));
+        Object.keys(activationDetails).forEach(key => delete activationDetails[key]);
+        records.forEach(item => {
+          activationDetails[item.number] = {
+            licenses: item.items.flatMap(license => (license.licenseKeys.length ? license.licenseKeys : [{ serialNumber: "" }]).map(key => ({ serial: key.serialNumber, model: license.model, type: license.licenseType, subscription: license.subscriptionEnd, price: license.priceCents / 100, licenseKey: key.licenseKey, licenseStatus: key.status }))),
+            payment: item.paymentStatus, simulator: item.simulator, comment: item.comment, total: item.totalCents / 100
+          };
+        });
+        Object.keys(balances).forEach(key => delete balances[key]);
+        const storedBalances = browserStore.getBalances();
+        organizationRecords.forEach(org => { balances[org.name] = storedBalances[org.id] || 0; });
+      }
+
+      function syncBrowserData() {
+        const organizationRecords = browserStore.getOrganizations();
+        organizations.splice(0, organizations.length, ...organizationRecords.map(org => [org.publicId, org.name, org.inn, org.city, "0", org.phone, org.email, org.id]));
+        organizationAccessLoaded = true;
+        const namesById = new Map(organizationRecords.map(org => [org.id, org.name]));
+        const productRecords = browserStore.getProducts();
+        contracts.splice(0, contracts.length, ...browserStore.getContracts());
+        products.splice(0, products.length, ...productRecords.map(product => ({
+          id: product.code, code: product.code, name: product.name, group: product.groupName, vendor: product.vendor,
+          rrp: product.rrpCents / 100, partnerPrice: product.partnerPriceCents / 100, price: product.priceCents / 100,
+          orgs: product.availableOrganizationIds.map(id => namesById.get(id)).filter(Boolean)
+        })));
+        products.forEach(product => { quantities[product.code] ||= 1; });
+        replaceContacts(browserStore.getContacts());
+        cart.splice(0, cart.length, ...browserStore.getCart().map(row => {
+          const product = productRecords.find(item => item.code === row.productCode);
+          const org = namesById.get(row.organizationId);
+          return product && org ? { key: `${org}|${product.vendor}|${product.code}`, organizationId: row.organizationId, org, vendor: product.vendor, code: product.code, name: product.name, price: product.priceCents / 100, qty: row.quantity } : null;
+        }).filter(Boolean));
+        createdCarts.splice(0, createdCarts.length, ...browserStore.getCarts().map(item => ({ number: item.number, date: new Intl.DateTimeFormat("ru-RU").format(new Date(item.createdAt)), orders: item.orderNumbers })));
+        replaceStoredOrders(browserStore.getOrders());
+        syncLicenseData(organizationRecords);
+        const allowedNames = new Set(organizations.map(org => org[1]));
+        if (!allowedNames.has(selectedLicenseOrg)) selectedLicenseOrg = organizations[0]?.[1] || "";
+      }
+
+      function saveCartToStore() {
+        browserStore.saveCart(cart.map(item => ({ key: `${item.organizationId || organizations.find(org => org[1] === item.org)?.[7]}|${item.vendor}|${item.code}`, organizationId: item.organizationId || organizations.find(org => org[1] === item.org)?.[7], vendor: item.vendor, productCode: item.code, quantity: item.qty })));
+      }
+
       function saveState() {
-        try {
-          const browserOrderDetails = Object.fromEntries(Object.entries(orderDetails).filter(([, details]) => !details.serverId));
-          const browserOrderTypes = Object.fromEntries(Object.entries(orderTypes).filter(([number]) => !serverOrderNumbers.has(number)));
-          localStorage.setItem(storageKey, JSON.stringify({ orders: orders.filter(order => browserOrderDetails[order[0]]), orderTypes: browserOrderTypes, orderDetails: browserOrderDetails, activations: activations.filter(activation => activationDetails[activation[0]]), activationDetails, carts: createdCarts.filter(item => !item.server), cart, quantities, balances }));
-        } catch {}
+        try { saveCartToStore(); } catch {}
       }
       const randomNatural = (min, max, used) => { let value; do value = String(Math.floor(Math.random() * (max - min + 1)) + min); while (used.has(value)); return value; };
       const todayLabel = () => new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date());
-      loadState();
-
-      async function serverApi(url, options) {
-        const response = await fetch(url, options);
-        let payload = {};
-        try { payload = await response.json(); } catch {}
-        if (!response.ok) throw new Error(payload.error || `Ошибка сервера HTTP ${response.status}`);
-        return payload;
-      }
-
-      function replaceOrganizations(rows) {
-        organizations.splice(0, organizations.length, ...rows.map(org => [org.publicId || org.id, org.name, org.inn, org.city, "0", org.phone, org.email, org.id]));
-        organizationAccessLoaded = true;
-        const allowedNames = new Set(organizations.map(org => org[1]));
-        for (let index = cart.length - 1; index >= 0; index -= 1) {
-          if (!allowedNames.has(cart[index].org)) cart.splice(index, 1);
-        }
-        if (!allowedNames.has(selectedLicenseOrg)) selectedLicenseOrg = organizations[0]?.[1] || "";
-        saveState();
-      }
-
       const isOrganizationVisible = organizationName => organizationAccessLoaded && organizations.some(org => org[1] === organizationName);
-      const visibleOrderRows = rows => rows.filter(order => serverOrderNumbers.has(order[0]) || isOrganizationVisible(order[2]));
+      const visibleOrderRows = rows => rows.filter(order => storedOrderNumbers.has(order[0]));
       const visibleActivations = () => activations.filter(activation => isOrganizationVisible(activation[2]));
-
-      function replaceCatalogProducts(payload, organizationName) {
-        products.splice(0, products.length, ...(payload.products || []).map(product => ({
-          id: product.id,
-          code: product.code,
-          name: product.name,
-          group: product.group,
-          vendor: product.vendor,
-          rrp: product.rrpCents / 100,
-          partnerPrice: product.partnerPriceCents / 100,
-          price: product.priceCents / 100,
-          orgs: [organizationName]
-        })));
-        products.forEach(product => { quantities[product.code] ||= 1; });
-        cart.forEach(item => {
-          const product = products.find(candidate => candidate.code === item.code);
-          if (product && item.org === organizationName) { item.price = product.price; item.productId = product.id; }
-        });
-      }
 
       async function loadCatalog(organizationName = "") {
         const requestId = ++catalogRequestId;
         catalogState.loading = true;
         catalogState.error = "";
         catalogState.selectedOrg = organizationName;
-        const organization = organizations.find(item => item[1] === organizationName);
         try {
-          const query = organization ? `?organizationId=${encodeURIComponent(organization[7] || organization[0])}` : "";
-          const payload = await serverApi(`/api/catalog${query}`);
           if (requestId !== catalogRequestId) return;
-          replaceOrganizations(payload.organizations || []);
-          replaceCatalogProducts(payload, organizationName);
+          syncBrowserData();
         } catch (error) {
           if (requestId !== catalogRequestId) return;
-          catalogState.error = error instanceof Error ? error.message : "Не удалось загрузить каталог";
-          products.splice(0, products.length);
+          catalogState.error = error instanceof Error ? error.message : "Не удалось загрузить данные браузера";
         } finally {
           if (requestId === catalogRequestId) catalogState.loading = false;
         }
       }
 
       function serverOrderDetails(order) {
+        const organization = browserStore.getOrganizations({ includeInactive: true }).find(item => item.id === order.organizationId);
         return {
-          serverId: order.id,
-          number: order.number,
-          type: "Покупка товара",
+           number: order.number,
+           type: order.type || "Покупка товара",
+           activationNumber: order.activationNumber || "",
           status: order.status,
           payment: order.paymentStatus,
           date: new Intl.DateTimeFormat("ru-RU").format(new Date(order.createdAt)),
           invoice: order.invoiceNumber || "—",
-          agreement: order.deliveryTerms,
-          org: order.organization.name,
+          agreement: order.agreement || order.deliveryTerms,
+          org: organization?.name || "Архивная организация",
           name: order.contactName,
           phone: order.contactPhone,
           email: order.contactEmail,
           comment: order.comment,
-          cartId: order.cartId || "",
+          cartId: order.cartNumber || "",
           cartNumber: order.cartNumber || "",
-          vendor: order.vendor || [...new Set((order.items || []).map(item => item.vendor))].join(", "),
-          items: (order.items || []).map(item => ({ code: item.code, name: item.name, vendor: item.vendor, price: item.unitPriceCents / 100, qty: item.quantity })),
+          vendor: order.vendor,
+          items: (order.items || []).map(item => ({ code: item.productCode || item.code || "", name: item.name, vendor: item.vendor, price: item.unitPriceCents / 100, qty: item.quantity })),
           total: order.totalCents / 100,
-          history: order.history || []
+          history: (order.history || []).map(item => ({ ...item, changedByEmail: item.changedBy }))
         };
       }
 
-      function upsertServerOrder(order) {
+      function upsertStoredOrder(order) {
         const number = order.number;
-        serverOrderNumbers.add(number);
-        orderTypes[number] = "Покупка товара";
-        const details = order.items ? serverOrderDetails(order) : { ...(orderDetails[number] || {}), serverId: order.id, number, type: "Покупка товара", status: order.status, payment: order.paymentStatus, date: new Intl.DateTimeFormat("ru-RU").format(new Date(order.createdAt)), invoice: order.invoiceNumber || "—", agreement: order.deliveryTerms, org: order.organization.name, name: order.contactName, phone: order.contactPhone, email: order.contactEmail, comment: order.comment, cartId: order.cartId || "", cartNumber: order.cartNumber || "", vendor: order.vendor || "", total: order.totalCents / 100 };
+        storedOrderNumbers.add(number);
+        orderTypes[number] = order.type || "Покупка товара";
+        const details = serverOrderDetails(order);
         orderDetails[number] = details;
         const row = [number, details.invoice || "—", details.org, details.date, details.status, details.agreement, rub(details.total), details.payment === "Оплачено" ? "✓" : "—", details.name];
         const existing = orders.findIndex(item => item[0] === number);
-        if (existing >= 0) orders.splice(existing, 1, row); else orders.unshift(row);
+        if (existing >= 0) orders.splice(existing, 1, row); else orders.push(row);
         return number;
       }
 
-      function removeServerOrder(number) {
+      function removeStoredOrder(number) {
         const index = orders.findIndex(order => order[0] === number);
         if (index >= 0) orders.splice(index, 1);
         delete orderDetails[number];
         delete orderTypes[number];
-        serverOrderNumbers.delete(number);
+        storedOrderNumbers.delete(number);
       }
 
-      function replaceServerProductOrders(serverOrders) {
-        const productNumbers = new Set([
-          ...serverOrderNumbers,
-          ...orders.filter(order => orderTypes[order[0]] === "Покупка товара" || orderDetails[order[0]]?.type === "Покупка товара").map(order => order[0])
-        ]);
-        productNumbers.forEach(removeServerOrder);
-        serverOrders.forEach(upsertServerOrder);
+      function replaceStoredOrders(storedOrders) {
+        [...storedOrderNumbers].forEach(removeStoredOrder);
+        storedOrders.forEach(upsertStoredOrder);
       }
 
       async function refreshServerOrders() {
         try {
-          const payload = await serverApi("/api/orders");
-          replaceServerProductOrders(Array.isArray(payload.orders) ? payload.orders : []);
+          syncBrowserData();
           ordersLoadError = "";
           return true;
         } catch (error) {
-          replaceServerProductOrders([]);
+          replaceStoredOrders([]);
           ordersLoadError = error instanceof Error ? error.message : "Не удалось загрузить заказы";
           return false;
         }
       }
 
       async function refreshServerOrder(number) {
-        const details = orderDetails[number];
-        if (!details?.serverId) return details;
         orderDetailsError = "";
-        try {
-          const payload = await serverApi(`/api/orders/${encodeURIComponent(details.serverId)}`);
-          upsertServerOrder(payload.order);
-          return orderDetails[number];
-        } catch (error) {
-          orderDetailsError = error instanceof Error ? error.message : "Не удалось обновить заказ";
-          throw error;
-        }
+        const order = browserStore.getOrder(number);
+        if (order) upsertStoredOrder(order);
+        return orderDetails[number];
       }
 
       function replaceContacts(rows) {
@@ -278,8 +251,7 @@
 
       async function refreshContacts() {
         try {
-          const payload = await serverApi("/api/contacts");
-          replaceContacts(payload.contacts || []);
+          replaceContacts(browserStore.getContacts());
           contactsLoadError = "";
           return true;
         } catch (error) {
@@ -290,17 +262,14 @@
       }
 
       async function createServerContact(input) {
-        const payload = await serverApi("/api/contacts", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(input)
-        });
+        const contact = browserStore.createContact(input);
         await refreshContacts();
-        return payload.contact;
+        return contact;
       }
 
       const esc = value => String(value).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
       const rub = value => new Intl.NumberFormat("ru-RU").format(value) + " ₽";
+      syncBrowserData();
       const openDialog = dialog => { if (!dialog) return; if (typeof dialog.showModal === "function") dialog.showModal(); else dialog.setAttribute("open", ""); };
       const closeDialog = dialog => { if (!dialog) return; if (typeof dialog.close === "function") dialog.close(); else dialog.removeAttribute("open"); };
       const orgOptions = (selected = "") => `<option value="" ${selected ? "" : "selected"}>Организация</option>${organizations.map(o => `<option value="${esc(o[1])}" ${o[1] === selected ? "selected" : ""}>${esc(o[1])}</option>`).join("")}`;
@@ -361,7 +330,7 @@
       }
 
       function catalogTable(selectedOrg = "", selectedGroup = "") {
-        if (catalogState.loading) return `<section class="table-panel"><div class="panel muted-note">Загрузка организаций и товаров из D1…</div></section>`;
+        if (catalogState.loading) return `<section class="table-panel"><div class="panel muted-note">Загрузка организаций и товаров из browser storage…</div></section>`;
         if (catalogState.error) return `<section class="table-panel"><div class="notice" role="alert">Не удалось загрузить каталог: ${esc(catalogState.error)}</div><button class="btn btn-primary" type="button" data-catalog-retry>Повторить</button></section>`;
         const groups = [...new Set(products.map(p => p.group))];
         const visible = products.filter(p => (!selectedOrg || p.orgs.includes(selectedOrg)) && (!selectedGroup || p.group === selectedGroup));
@@ -399,9 +368,11 @@
           const vendorHtml = Object.entries(vendors).map(([vendor, items], vi) => {
             const total = items.reduce((sum, i) => sum + i.price * i.qty, 0);
             const groupId = `cart-${oi}-${vi}`;
-            return `<section class="vendor-block"><div class="vendor-head"><div class="page-title">${esc(vendor)}</div><label class="form-label">Договор<select class="form-select"><option>Основной договор</option><option>Другой активный договор</option></select></label></div>
+            const organizationId = organizations.find(item => item[1] === org)?.[7] || "";
+            const contractOptions = contracts.map(contract => `<option value="${esc(contract.id)}">${esc(contract.name)}</option>`).join("");
+            return `<section class="vendor-block"><div class="vendor-head"><div class="page-title">${esc(vendor)}</div><label class="form-label">Договор<select class="form-select" data-cart-contract data-organization-id="${esc(organizationId)}" data-vendor="${esc(vendor)}">${contractOptions}</select></label></div>
               ${cartTable(items, org, vendor, groupId)}
-              <div class="comment-line"><div class="comment-box"><div class="form-check"><input class="form-check-input" type="checkbox" id="comment-${groupId}" data-comment-toggle="${groupId}"><label class="form-check-label" for="comment-${groupId}">Добавить комментарий</label></div><textarea class="form-control" rows="2" placeholder="Комментарий к предварительному заказу" data-comment-box="${groupId}" hidden></textarea></div><div class="sum-block"><div class="label">Сумма по договору</div><div>${rub(total)}</div></div></div>
+              <div class="comment-line"><div class="comment-box"><div class="form-check"><input class="form-check-input" type="checkbox" id="comment-${groupId}" data-comment-toggle="${groupId}"><label class="form-check-label" for="comment-${groupId}">Добавить комментарий</label></div><textarea class="form-control" rows="2" placeholder="Комментарий к предварительному заказу" data-comment-box="${groupId}" data-comment-organization-id="${esc(organizationId)}" data-comment-vendor="${esc(vendor)}" hidden></textarea></div><div class="sum-block"><div class="label">Сумма по договору</div><div>${rub(total)}</div></div></div>
             </section>`;
           }).join("");
           return `<section class="cart-org"><div class="cart-org-head"><div class="page-title">${esc(org)}</div><div class="page-title">${rub(orgTotal)}</div></div><div class="cart-user"><div><div class="label">ФИО</div><div>Иванов Иван Иванович</div></div><div><div class="label">Email</div><div>example@mail.ru</div></div><div><div class="label">Телефон</div><div>+79876543210</div></div></div>${vendorHtml}</section>`;
@@ -415,38 +386,18 @@
         if (!organizationAccessLoaded) throw new Error("Список доступных организаций ещё не загружен");
         if (checkoutInProgress) return null;
         checkoutInProgress = true;
-        pendingCheckoutKey ||= crypto.randomUUID();
-        const grouped = {};
-        cart.forEach(item => {
-          const groupKey = `${item.org}|${item.vendor}`;
-          grouped[groupKey] ||= { org: item.org, vendor: item.vendor, items: [] };
-          grouped[groupKey].items.push({ ...item });
-        });
         try {
-          const createdOrders = [];
-          for (const group of Object.values(grouped)) {
-            const organization = organizations.find(item => item[1] === group.org);
-            if (!organization) throw new Error(`Организация «${group.org}» недоступна`);
-            const organizationId = organization[7] || organization[0];
-            const catalog = await serverApi(`/api/catalog?organizationId=${encodeURIComponent(organizationId)}`);
-            const byCode = new Map((catalog.products || []).map(product => [product.code, product]));
-            const items = group.items.map(item => {
-              const product = byCode.get(item.code);
-              if (!product) throw new Error(`Товар ${item.code} недоступен для выбранной организации`);
-              return { productId: product.id, quantity: item.qty };
-            });
-            const payload = await serverApi("/api/orders", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ organizationId, cartId: pendingCheckoutKey, idempotencyKey: `${pendingCheckoutKey}:${organizationId}:${group.vendor}`, items, contactName: "Иванов Иван Иванович", contactPhone: "+7 987 654 32 10", contactEmail: "example@mail.ru", deliveryTerms: "Предоплата 100%" })
-            });
-            createdOrders.push(upsertServerOrder(payload.order));
-          }
-          const result = { number: orderDetails[createdOrders[0]]?.cartNumber || "—", date: todayLabel(), orders: createdOrders, server: true };
-          createdCarts.unshift(result);
-          cart.splice(0, cart.length);
-          pendingCheckoutKey = "";
-          saveState();
+          saveCartToStore();
+          const contractIds = {};
+          content.querySelectorAll("[data-cart-contract]").forEach(select => { contractIds[`${select.dataset.organizationId}|${select.dataset.vendor}`] = select.value; });
+          const comments = {};
+          content.querySelectorAll("[data-comment-box]").forEach(textarea => {
+            const value = textarea.value.trim();
+            if (value) comments[`${textarea.dataset.commentOrganizationId}|${textarea.dataset.commentVendor}`] = value;
+          });
+          const created = browserBusiness.checkout({ contactName: "Иванов Иван Иванович", contactPhone: "+7 987 654 32 10", contactEmail: "example@mail.ru", deliveryTerms: "Предоплата 100%", contractIds, comments });
+          const result = { number: created.cart.number, date: todayLabel(), orders: created.orders.map(order => order.number) };
+          syncBrowserData();
           return result;
         } finally {
           checkoutInProgress = false;
@@ -460,7 +411,7 @@
           const details = orderDetails[number]; if (!details) return "";
           return `<section class="order-block cart-result-order"><div class="page-head"><div class="page-title"><a href="#" data-order-number="${esc(number)}">Заказ №${esc(number)}</a> на ${rub(details.total)}</div></div><div class="order-columns"><div><div class="order-field"><div class="label">Организация</div><div>${esc(details.org)}</div></div><div class="order-field"><div class="label">ФИО</div><div>${esc(details.name)}</div></div><div class="order-field"><div class="label">Телефон</div><div>${esc(details.phone)}</div></div><div class="order-field"><div class="label">E-mail</div><div><a href="mailto:${esc(details.email)}">${esc(details.email)}</a></div></div></div><div><div class="order-field"><div class="label">Статус заказа</div><div><strong>${esc(details.status)}</strong></div></div><div class="order-field"><div class="label">Тип заказа</div><div>${esc(details.type)}</div></div><div class="order-field"><div class="label">Статус оплаты</div><div>${esc(details.payment)}</div></div><div class="order-field"><div class="label">Дата заказа</div><div>${esc(details.date)}</div></div><div class="order-field"><div class="label">Номер счета</div><div>${esc(details.invoice || "—")}</div></div><div class="order-field"><div class="label">Договор</div><div>${esc(details.agreement)}</div></div></div></div></section>`;
         }).join("");
-        return `<div class="page-head"><div class="page-title">Корзина № ${esc(result.number)}</div></div>${cards}<div class="simulator-note">Заказ сохранён в постоянной базе данных D1.</div>`;
+        return `<div class="page-head"><div class="page-title">Корзина № ${esc(result.number)}</div></div>${cards}<div class="simulator-note">Корзина и заказы сохранены в browser storage.</div>`;
       }
 
       const licenseKeys = ["service", "marking", "extended"];
@@ -526,35 +477,56 @@
       function createActivationRecord(comment = "") {
         const selected = selectedLicenseItems();
         if (!selected.length) return null;
-        const activationNumber = randomNatural(125, 9999, new Set(activations.map(item => item[0])));
+        const [activationNumber] = browserStore.reserveNumbers("activation", 1);
         const status = lastCheckedSerial === "0000000000000000" ? "Ошибка" : "В работе";
         const total = selected.reduce((sum, item) => sum + item.price, 0);
-        if (status !== "Ошибка") balances[selectedLicenseOrg] = Math.max(0, (balances[selectedLicenseOrg] || 0) - total);
+        const organizationId = organizations.find(item => item[1] === selectedLicenseOrg)?.[7];
+        if (!organizationId) throw new Error("Организация не найдена");
+        if (status !== "Ошибка") browserStore.updateBalance(organizationId, Math.max(0, (balances[selectedLicenseOrg] || 0) - total));
         const payment = status === "Ошибка" ? "—" : "Оплачено";
-        const activation = [activationNumber, "—", selectedLicenseOrg, status, "Пэй Киоск", String(selected.length), rub(total), status === "Ошибка" ? "—" : "✓", todayLabel(), comment || "—"];
-        activations.unshift(activation); activationDetails[activationNumber] = { licenses: selected, payment, simulator: "ФР-Крипто", comment: comment || "", total }; saveState(); return activation;
+        browserStore.createActivation({
+          id: activationNumber, number: activationNumber, orderNumber: "", organizationId, status, vendor: "Пэй Киоск",
+          totalCents: total * 100, paymentStatus: payment, orderedAt: new Date().toISOString(), comment: comment || "", simulator: "ФР-Крипто",
+          items: selected.map((item, index) => ({ id: `${activationNumber}-${index + 1}`, model: item.model, licenseType: item.type, subscriptionEnd: item.subscription, priceCents: item.price * 100, licenseKeys: status === "Ошибка" ? [] : [{ id: `key-${activationNumber}-${index + 1}`, serialNumber: item.serial, licenseKey: `DEMO-${activationNumber}-${index + 1}`, status: "Активна" }] }))
+        });
+        syncBrowserData();
+        return activations.find(item => item[0] === activationNumber) || null;
       }
 
       function completeActivation(activationNumber) {
-        const activation = activations.find(item => item[0] === activationNumber);
-        const details = activationDetails[activationNumber];
-        if (!activation || !details || activation[3] !== "В работе") return activation;
-        const orderNumber = randomNatural(13000, 99999, new Set(orders.map(item => item[0])));
+        const record = browserStore.getActivation(activationNumber);
+        if (!record || record.status !== "В работе") return activations.find(item => item[0] === activationNumber);
+        const [orderNumber] = browserStore.reserveNumbers("order", 1);
         const invoice = `ПГ-${randomNatural(100, 999, new Set())}`;
-        const total = details.total || details.licenses.reduce((sum, item) => sum + item.price, 0);
-        const order = [orderNumber, invoice, activation[2], todayLabel(), "Отгружен", "Предоплата 100%", rub(total), "✓", "Иванов Иван Иванович"];
-        orders.unshift(order); orderTypes[orderNumber] = "Активация лицензий";
-        orderDetails[orderNumber] = { number: orderNumber, type: "Активация лицензий", status: "Отгружен", payment: "Оплачено", date: todayLabel(), invoice, agreement: "Сублицензионный договор (Предоплата 100%) от 15.12.2025", org: activation[2], name: "Иванов Иван Иванович", phone: "+7 987 654 32 10", email: "aqaglobal+testZS@aqsi.ru", comment: `Активация № ${activationNumber}`, vendor: "Пи Джи Групп", items: details.licenses.map(item => ({ name: item.name || `${item.type} — ${item.model}`, price: item.price, qty: 1 })), total };
-        activation[1] = orderNumber; activation[3] = "Выполнена"; activation[7] = "✓"; details.payment = "Оплачено"; saveState(); return activation;
+        browserStore.createOrder({
+          number: orderNumber, cartNumber: "", organizationId: record.organizationId, vendor: record.vendor, type: "Активация лицензий", activationNumber,
+          status: "Отгружен", paymentStatus: "Оплачено", invoiceNumber: invoice, deliveryTerms: "Предоплата 100%",
+          agreement: "Сублицензионный договор (Предоплата 100%) от 15.12.2025", contactName: "Иванов Иван Иванович",
+          contactPhone: "+7 987 654 32 10", contactEmail: "aqaglobal+testZS@aqsi.ru", comment: `Активация № ${activationNumber}`,
+          createdAt: new Date().toISOString(), totalCents: record.totalCents,
+          items: record.items.map((item, index) => ({ code: `LICENSE-${index + 1}`, name: `${item.licenseType} — ${item.model}`, vendor: record.vendor, quantity: 1, unitPriceCents: item.priceCents, lineTotalCents: item.priceCents })),
+          history: [{ fromStatus: null, toStatus: "Отгружен", changedAt: new Date().toISOString(), changedBy: "ЛКП" }]
+        });
+        browserStore.updateActivation(activationNumber, { orderNumber, status: "Выполнена", paymentStatus: "Оплачено" });
+        syncBrowserData();
+        return activations.find(item => item[0] === activationNumber) || null;
       }
 
       function createAdvanceOrder(amount) {
-        const number = randomNatural(13000, 99999, new Set(orders.map(item => item[0])));
+        const [number] = browserStore.reserveNumbers("order", 1);
         const invoice = `ПГ-${randomNatural(100, 999, new Set())}`;
-        const order = [number, invoice, selectedLicenseOrg, todayLabel(), "Принят", "Предоплата 100%", rub(amount), "✓", "Иванов Иван Иванович"];
-        orders.unshift(order); orderTypes[number] = "Авансовый платеж";
-        balances[selectedLicenseOrg] = (balances[selectedLicenseOrg] || 0) + amount;
-        orderDetails[number] = { number, type: "Авансовый платеж", status: "Принят", payment: "Оплачено", date: todayLabel(), invoice, agreement: "Сублицензионный договор (Предоплата 100%) от 15.12.2025", org: selectedLicenseOrg, name: "Иванов Иван Иванович", phone: "+7 987 654 32 10", email: "aqaglobal+testZS@aqsi.ru", vendor: "Пи Джи Групп", items: [{ name: "Авансовый платеж", price: amount, qty: 1 }], total: amount };
-        saveState(); return order;
+        const organizationId = organizations.find(item => item[1] === selectedLicenseOrg)?.[7];
+        if (!organizationId) throw new Error("Организация не найдена");
+        browserStore.createOrder({
+          number, cartNumber: "", organizationId, vendor: "Пи Джи Групп", type: "Авансовый платеж", status: "Принят",
+          paymentStatus: "Оплачено", invoiceNumber: invoice, deliveryTerms: "Предоплата 100%",
+          agreement: "Сублицензионный договор (Предоплата 100%) от 15.12.2025", contactName: "Иванов Иван Иванович",
+          contactPhone: "+7 987 654 32 10", contactEmail: "aqaglobal+testZS@aqsi.ru", comment: "", createdAt: new Date().toISOString(),
+          totalCents: amount * 100, items: [{ code: "ADVANCE", name: "Авансовый платеж", vendor: "Пи Джи Групп", quantity: 1, unitPriceCents: amount * 100, lineTotalCents: amount * 100 }],
+          history: [{ fromStatus: null, toStatus: "Принят", changedAt: new Date().toISOString(), changedBy: "ЛКП" }]
+        });
+        browserStore.updateBalance(organizationId, (balances[selectedLicenseOrg] || 0) + amount);
+        syncBrowserData();
+        return orders.find(item => item[0] === number) || null;
       }
 

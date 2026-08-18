@@ -1,6 +1,7 @@
       function render(page, context) {
         activePage = page;
         activeContext = context ?? null;
+        persistNavigation(page, activeContext);
         let html = "";
         shell.classList.toggle("login-mode", page === "login");
         if (page === "login") {
@@ -19,7 +20,7 @@
         } else if (page === "order") {
           const o = context || orders[0];
           const details = orderDetails[o[0]] || null;
-          const linked = activations.find(a => a[1] === o[0]);
+          const linked = activations.find(a => a[0] === details?.activationNumber || a[1] === o[0]);
           const licenseOrder = linked || o[0] === "12540" || details?.type === "Активация лицензий";
           const advanceOrder = o[0] === "12480" || details?.type === "Авансовый платеж";
           const items = details?.items ? details.items.map((item, index) => [String(index + 1), esc(item.name), rub(item.price), String(item.qty), rub(item.price * item.qty)]) : advanceOrder
@@ -34,8 +35,8 @@
               </section>
               <section class="order-block"><h3>Заказ</h3>
                 <div class="order-field"><div class="label">Статус заказа</div><div>${esc(details?.status || "Отгружен")}</div></div>
-                ${details?.serverId ? `<div class="order-field"><div class="label">Номер корзины</div><div>${esc(details.cartNumber || "—")}</div></div>` : ""}
-                <div class="order-field"><div class="label">Тип заказа</div><div>${esc(details?.type || (advanceOrder ? "Авансовый платеж" : licenseOrder ? "Активация лицензий" : "Покупка товара"))}</div></div><div class="order-field"><div class="label">Статус оплаты</div><div>${esc(details?.payment || (licenseOrder ? "В ожидании" : "Оплачено"))}</div></div><div class="order-field"><div class="label">Дата заказа</div><div>${esc(details?.date || "06.08.2026")}</div></div><div class="order-field"><div class="label">Номер счёта</div><div>${esc(details?.invoice || (licenseOrder ? "ПГ-362" : o[1]))}</div></div><div class="order-field"><div class="label">Договор</div><div>${esc(details?.agreement || "Сублицензионный договор (Предоплата 100%) от 15.12.2025")}</div></div>
+                ${details?.cartNumber ? `<div class="order-field"><div class="label">Номер корзины</div><div>${esc(details.cartNumber)}</div></div>` : ""}
+                <div class="order-field"><div class="label">Тип заказа</div><div>${esc(details?.type || (advanceOrder ? "Авансовый платеж" : licenseOrder ? "Активация лицензий" : "Покупка товара"))}</div></div><div class="order-field"><div class="label">Статус оплаты</div><div>${esc(details?.payment || "Оплачено")}</div></div><div class="order-field"><div class="label">Дата заказа</div><div>${esc(details?.date || "06.08.2026")}</div></div><div class="order-field"><div class="label">Номер счёта</div><div>${esc(details?.invoice || (licenseOrder ? "ПГ-362" : o[1]))}</div></div><div class="order-field"><div class="label">Договор</div><div>${esc(details?.agreement || "Сублицензионный договор (Предоплата 100%) от 15.12.2025")}</div></div>
               </section>
             </div>
             <section class="mini-section"><h3>Вендор: ${esc(details?.vendor || (advanceOrder ? "Пи Джи Групп" : licenseOrder ? "Пэй Киоск" : "Пи Джи Групп"))}</h3>${plainTable(["№", "Наименование", "Цена", "Количество", "Сумма"], items, "order-items")}<div class="mini-total">Итого: ${details ? rub(details.total) : advanceOrder ? "10 000 ₽" : licenseOrder ? "4 000 ₽" : "24 500 ₽"}</div></section>
@@ -84,6 +85,7 @@
         if (page !== "login") html = breadcrumbs(page) + html;
         content.innerHTML = html;
         bindContent();
+        if (page === "profile" && context === "contacts") content.querySelector('[data-tab="contacts"]')?.click();
         updateCartControls();
       }
 
@@ -358,6 +360,8 @@
           const area = content.querySelector("#profile-tab");
           if (button.dataset.tab === "orgs") area.innerHTML = organizationTable();
           else area.innerHTML = `<div class="page-head"><span></span><button class="btn btn-primary" data-add-contact>Добавить контакт</button></div>${contactsLoadError ? `<div class="notice" role="alert">${esc(contactsLoadError)}</div>` : ""}${contactTable()}`;
+          activeContext = button.dataset.tab;
+          persistNavigation("profile", activeContext);
           bindContent();
         }));
         const addContact = content.querySelector("[data-add-contact]"); const contactDialog = content.querySelector("[data-contact-dialog]"); if (addContact && contactDialog) addContact.addEventListener("click", () => { if (typeof contactDialog.showModal === "function") contactDialog.showModal(); else contactDialog.setAttribute("open", ""); }); content.querySelectorAll("[data-close-contact]").forEach(button => button.addEventListener("click", () => { if (!contactDialog) return; if (typeof contactDialog.close === "function") contactDialog.close(); else contactDialog.removeAttribute("open"); })); const contactForm = content.querySelector("[data-contact-form]"); if (contactForm && contactDialog && contactForm.dataset.submitBound !== "true") { contactForm.dataset.submitBound = "true"; contactForm.addEventListener("submit", async event => { event.preventDefault(); const submit = contactForm.querySelector('[type="submit"]'); const errorArea = contactForm.querySelector("[data-contact-error]"); if (submit) submit.disabled = true; if (errorArea) errorArea.textContent = ""; try { await createServerContact({ fullName: contactForm.querySelector("[data-contact-full-name]").value, position: contactForm.querySelector("[data-contact-position]").value, email: contactForm.querySelector("[data-contact-email]").value, phone: contactForm.querySelector("[data-contact-phone]").value, department: contactForm.querySelector("[data-contact-department]").value }); if (typeof contactDialog.close === "function") contactDialog.close(); else contactDialog.removeAttribute("open"); render("profile"); const contactsTab = content.querySelector('[data-tab="contacts"]'); if (contactsTab) contactsTab.click(); } catch (error) { if (errorArea) errorArea.textContent = error instanceof Error ? error.message : "Не удалось сохранить контакт"; } finally { if (submit) submit.disabled = false; } }); }
@@ -376,11 +380,9 @@
         const saveActivationComment = content.querySelector("[data-save-activation-comment]");
         if (saveActivationComment) saveActivationComment.addEventListener("click", () => {
           const activationNumber = saveActivationComment.dataset.saveActivationComment;
-          const activation = activations.find(item => item[0] === activationNumber);
-          const details = activationDetails[activationNumber] || (activationDetails[activationNumber] = {});
           const input = content.querySelector("[data-activation-comment-input]");
           const value = input ? input.value.trim() : "";
-          details.comment = value; if (activation) activation[9] = value || "—"; saveState(); if (activation) render("activation", activation);
+          browserStore.updateActivation(activationNumber, { comment: value }); syncBrowserData(); const updated = activations.find(item => item[0] === activationNumber); if (updated) render("activation", updated);
         });
         const updateActivationStatus = content.querySelector("[data-update-activation-status]");
         if (updateActivationStatus) updateActivationStatus.addEventListener("click", () => { const activation = completeActivation(updateActivationStatus.dataset.updateActivationStatus); if (activation) render("activation", activation); });
@@ -526,7 +528,16 @@
         mobileMenu.setAttribute("aria-label", open ? "Закрыть меню" : "Открыть меню");
         if (window.lucide) window.lucide.createIcons({ attrs: { width: 16, height: 16 } });
       });
-      render("catalog");
+      const restoredNavigation = restoreNavigation();
+      render(restoredNavigation.page, restoredNavigation.context);
+      browserStore.subscribe(change => {
+        if (change.reason !== "reset" && change.reason !== "external") return;
+        const activationNumber = activePage === "activation" ? activeContext?.[0] : "";
+        const orderNumber = activePage === "order" ? activeContext?.[0] : "";
+        syncBrowserData();
+        const refreshedContext = activationNumber ? activations.find(item => item[0] === activationNumber) : orderNumber ? orders.find(item => item[0] === orderNumber) : activeContext;
+        if (["catalog", "orders", "profile", "organization", "activations", "activation", "activate-org", "cart", "cart-result", "order"].includes(activePage)) render(activePage, refreshedContext);
+      });
       void Promise.all([loadCatalog(), refreshServerOrders(), refreshContacts()]).then(() => {
         if (["catalog", "orders", "profile", "organization", "activations", "activate-org", "cart"].includes(activePage)) render(activePage, activeContext);
       });

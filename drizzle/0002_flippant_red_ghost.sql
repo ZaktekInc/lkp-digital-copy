@@ -1,1 +1,0 @@
-ALTER TABLE `orders` ADD `cart_id` text DEFAULT '' NOT NULL;

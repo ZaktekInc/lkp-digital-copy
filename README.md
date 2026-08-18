@@ -1,101 +1,79 @@
 # Цифровая копия ЛКП
 
-Кликабельный прототип личного кабинета партнёра на базе
-[vinext](https://github.com/cloudflare/vinext).
+Цифровая копия ЛКП — browser-only личный продуктовый стенд владельца проекта. Она моделирует интерфейс и бизнес-логику Личного кабинета партнёра, позволяет проверять сквозные сценарии и прототипировать будущие эпики до их реализации в промышленном ЛКП.
 
-## Prerequisites
+Это модель, а не production-ЛКП и не источник продуктовой истины. Актуальные требования настоящего ЛКП определяются его отдельной документацией и эпиками.
 
-- Node.js `>=22.13.0`
-- Linux with `flock`, `curl`, and GNU `timeout`
+## Архитектура
 
-## Sites Lifecycle
+ЛКП и Админ-панель работают с одними бизнес-объектами в одном браузере:
 
-The Sites lifecycle CLI runs the locked dependency install before returning this checkout. Edit the source under `app/`, then checkpoint when a coherent milestone is ready to inspect or share. The remote Sites builder runs `npm run build` against the pushed commit. Do not repeat install or build as a normal pre-checkpoint step.
+`UI ЛКП + Admin → business layer → storage layer → localStorage`
 
-This starter does not use `wrangler.jsonc`.
+Постоянное состояние хранится только под ключом `lkp-digital-copy-state`, имеет `schemaVersion: 5` и создаётся из канонических demo data при первом запуске. Последовательная миграция с версии 4 сохраняет пользовательские заказы и добавляет только отсутствующие товарные номера счетов и их счётчики. Storage layer предоставляет CRUD-операции и централизованную подписку на изменения. Reset и изменения из другой вкладки обновляют browser-only экраны без отдельной постоянной копии данных.
 
-`install:ci` is intentionally a single, non-retrying `npm ci`. It refuses a concurrent install for the same project, consumes a matching image-seeded npm cache with `--prefer-offline` while retaining registry fallback for a missing cache object, otherwise downloads and verifies the complete vinext tarball recorded in `package-lock.json`, limits npm to one socket, and terminates a stalled install. `build` applies a short timeout and then validates the Sites artifact. These helpers target Linux and use GNU `timeout`; they are not native macOS scripts.
+Основные файлы:
 
-Scripts that need writable project-scoped home, npm, XDG, and temporary paths use `scripts/sites-env.sh`. The `dev` and `start` scripts honor the caller's runtime environment and keep Wrangler logs inside the checkout. The generated `.sites-runtime/` directory is disposable and ignored by Git.
+- `public/lkp-demo-data.js` — стартовый снимок всех бизнес-данных;
+- `public/lkp-browser-storage.js` — единая точка постоянной записи, миграции и reset;
+- `public/lkp-browser-business.js` — оформление корзины и разбиение на заказы;
+- `public/lkp-data.js` и `public/lkp.js` — адаптер и существующий UI ЛКП;
+- `app/admin/` — React Админ-панель над тем же browser storage.
 
-## Included Shape
+## Данные и связи
 
-- edit site code under `app/`
-- `app/chatgpt-auth.ts` provides optional dispatch-owned ChatGPT sign-in helpers
-- `.openai/hosting.json` declares optional Sites bindings
-- `vite.config.ts` simulates declared bindings for local development
+В общем browser state находятся:
 
-## Workspace Auth Headers
+- организации и контакты;
+- продукция, цены и доступность по организациям;
+- незавершённая и оформленные корзины;
+- товарные, активационные и авансовые заказы;
+- лицензии, активации, позиции и демонстрационные ключи;
+- договоры и справочники Админ-панели;
+- минимальные балансы по ID организации;
+- централизованные счётчики и версия схемы.
 
-OpenAI workspace sites can read the current user's email from
-`oai-authenticated-user-email`.
+Один товарный заказ относится к одной Организации и одному Вендору. Одно оформление создаёт одну Корзину, а позиции группируются по паре `Организация + Вендор` в самостоятельные Заказы. Договор выбирается из канонической browser-only коллекции и сохраняется в заказе.
 
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
+Комментарий оформления сохраняется непосредственно в соответствующих заказах. Товарные заказы получают постоянный номер счёта из независимой последовательности вендора: `ПГ-100`, `ПГ-101` для Пи Джи Групп и `РР-100`, `РР-101` для РР-Электро. Новые заказы записывают `createdAt` и отображаются сверху по убыванию даты без изменения канонического массива state.
 
-Treat the full name as optional and fall back to email when it is absent:
+Демонстрационная активация `123` связана с оплаченным заказом `12540`; активация `124` остаётся в работе без заказа. Авансовый заказ `12480` на 10 000 ₽ хранится в общем `state.orders`, а demo-баланс той же организации равен 6 000 ₽ после подтверждённого списания 4 000 ₽ на активацию `123`. ЛКП и Admin читают одни и те же записи.
 
-```tsx
-import { headers } from "next/headers";
+## Интерфейсы
 
-export default async function Home() {
-  const requestHeaders = await headers();
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
+ЛКП расположен на `/`, Админ-панель — на `/admin`. Legacy-интерфейс ЛКП остаётся статической HTML/CSS/JS-страницей внутри iframe; Admin использует React и Next-совместимую маршрутизацию через Vinext. Текущий логический экран ЛКП и идентификатор открытого заказа или активации отражаются в hash родительского URL, поэтому обычный refresh восстанавливает тот же раздел или карточку.
 
-  const displayName = fullName ?? email;
-  // ...
-}
+Admin предоставляет существующие операции с контрагентами, продукцией, заказами, лицензиями, договорами и справочниками. Действие «Восстановить демоданные» атомарно заменяет browser state исходным снимком и уведомляет оба интерфейса.
+
+## Стек
+
+Текущий frontend stack: Vite, Vinext, Next-совместимые React-страницы, TypeScript, legacy browser JavaScript и `localStorage`. Next/Vinext сохраняются как действующая основа React Admin и маршрутизации; перенос на другую frontend-архитектуру не требуется.
+
+Полноценного business backend у цифровой копии нет: бизнес-данные не обслуживаются API, базой данных или Worker runtime.
+
+## Локальный запуск и проверки
+
+Требуется Node.js `>=22.13.0`.
+
+```bash
+npm install
+npm run dev
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+Vite обычно открывает проект на `http://localhost:5173`. Проверки и production-сборка:
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
+```bash
+npm test
+npm run typecheck
+npm run lint
+npm run build
+```
 
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
+## Mock-интеграции и ограничения
 
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
+- ФР-Крипто, генерация лицензий, файлы и внешние интеграции моделируются локально.
+- Балансы и авансовые операции реализуют только необходимый демонстрационный сценарий, а не финансовую систему.
+- Данные доступны только в текущем браузере и origin; синхронизации между устройствами и пользователями нет.
+- Настоящая server-side авторизация не используется и не требуется для личного стенда.
 
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
-
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
-
-## Diagnostic Commands
-
-- `npm run install:ci`: perform the one bounded lockfile install
-- `npm run dev`: start the Vite/Vinext development server
-- `npm run build`: build and validate the deployable Sites artifact
-- `npm run start`: start the built Vinext application
-- `npm test`: build, validate, and verify the rendered development-preview metadata
-- `npm run validate:artifact`: recheck an existing artifact's manifest and ESM `default.fetch` export
-
-Use build and validation commands for targeted diagnosis after a remote failure, not as part of the normal checkpoint path.
-
-The timeout defaults can be overridden for a controlled canary with `SITES_INSTALL_TIMEOUT`, `SITES_INSTALL_KILL_AFTER`, `SITES_BUILD_TIMEOUT`, and `SITES_BUILD_KILL_AFTER`. A timeout fails the command; the helpers never retry an unchanged install or build.
-
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
+GitHub используется как репозиторий исходного кода. Будущая публикация планируется через GitHub Pages отдельной задачей; до её настройки проект используется только на localhost.

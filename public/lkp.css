@@ -417,6 +417,12 @@ small,
   white-space: nowrap;
   user-select: none;
   -webkit-font-smoothing: antialiased;
+  transition: transform 80ms ease, filter 80ms ease;
+}
+
+.btn:not(:disabled):active {
+  transform: translateY(1px) scale(0.98);
+  filter: brightness(0.96);
 }
 
 .btn:is(.btn-block, .viz-tile) {

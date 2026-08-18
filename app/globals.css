@@ -27,3 +27,12 @@ body {
 }
 
 * { box-sizing: border-box; }
+
+button:not(:disabled) {
+  transition: transform 80ms ease, filter 80ms ease;
+}
+
+button:not(:disabled):active {
+  transform: translateY(1px) scale(0.98);
+  filter: brightness(0.96);
+}

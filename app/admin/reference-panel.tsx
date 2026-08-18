@@ -2,21 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
-type ReferenceItem = {
-  id: string;
-  code: string;
-  name: string;
-  description: string;
-  isActive: boolean;
-  updatedAt: string;
-};
-
-async function api<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
-  const payload = (await response.json()) as T & { error?: string };
-  if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
-  return payload;
-}
+type ReferenceItem = BrowserReferenceItem;
 
 export default function ReferencePanel({ kind, title }: { kind: string; title: string }) {
   const [items, setItems] = useState<ReferenceItem[]>([]);
@@ -25,13 +11,13 @@ export default function ReferencePanel({ kind, title }: { kind: string; title: s
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const load = useCallback(async () => {
+  const load = useCallback(() => {
     setLoading(true);
     setError("");
     try {
-      const payload = await api<{ items: ReferenceItem[] }>(`/api/admin/references/${encodeURIComponent(kind)}`);
-      setItems(payload.items);
-      setSelected((current) => current ? payload.items.find((item) => item.id === current.id) || null : null);
+      const next = window.LkpBrowserStore.getReferenceItems(kind);
+      setItems(next);
+      setSelected((current) => current ? next.find((item) => item.id === current.id) || null : null);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Не удалось загрузить справочник");
     } finally {
@@ -40,18 +26,10 @@ export default function ReferencePanel({ kind, title }: { kind: string; title: s
   }, [kind]);
 
   useEffect(() => {
-    let cancelled = false;
-    void api<{ items: ReferenceItem[] }>(`/api/admin/references/${encodeURIComponent(kind)}`).then((payload) => {
-      if (cancelled) return;
-      setItems(payload.items);
-      setLoading(false);
-    }).catch((requestError) => {
-      if (cancelled) return;
-      setError(requestError instanceof Error ? requestError.message : "Не удалось загрузить справочник");
-      setLoading(false);
-    });
-    return () => { cancelled = true; };
-  }, [kind]);
+    const initialLoad = window.setTimeout(load, 0);
+    const unsubscribe = window.LkpBrowserStore.subscribe(load);
+    return () => { window.clearTimeout(initialLoad); unsubscribe(); };
+  }, [load]);
 
   async function createItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -60,18 +38,14 @@ export default function ReferencePanel({ kind, title }: { kind: string; title: s
     setSaving(true);
     setError("");
     try {
-      await api(`/api/admin/references/${encodeURIComponent(kind)}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          code: values.get("code"),
-          name: values.get("name"),
-          description: values.get("description"),
-          isActive: true,
-        }),
+      window.LkpBrowserStore.createReferenceItem(kind, {
+        code: String(values.get("code") || ""),
+        name: String(values.get("name") || ""),
+        description: String(values.get("description") || ""),
+        isActive: true,
       });
       form.reset();
-      await load();
+      load();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Не удалось создать запись");
     } finally {
@@ -86,18 +60,14 @@ export default function ReferencePanel({ kind, title }: { kind: string; title: s
     setSaving(true);
     setError("");
     try {
-      const payload = await api<{ item: ReferenceItem }>(`/api/admin/references/${encodeURIComponent(kind)}/${encodeURIComponent(selected.id)}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          code: values.get("code"),
-          name: values.get("name"),
-          description: values.get("description"),
-          isActive: values.get("isActive") === "on",
-        }),
+      const item = window.LkpBrowserStore.updateReferenceItem(kind, selected.id, {
+        code: String(values.get("code") || ""),
+        name: String(values.get("name") || ""),
+        description: String(values.get("description") || ""),
+        isActive: values.get("isActive") === "on",
       });
-      setSelected(payload.item);
-      await load();
+      setSelected(item);
+      load();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Не удалось сохранить запись");
     } finally {
@@ -109,7 +79,7 @@ export default function ReferencePanel({ kind, title }: { kind: string; title: s
     <section className="rounded-xl border border-[#dce3ec] bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div><p className="text-sm text-[#65758b]">Справочник</p><h2 className="text-xl font-bold">{title}</h2></div>
-        <button type="button" onClick={() => void load()} className="rounded-lg border border-[#b8c7da] px-4 py-2 text-sm font-semibold">Обновить</button>
+        <button type="button" onClick={load} className="rounded-lg border border-[#b8c7da] px-4 py-2 text-sm font-semibold">Обновить</button>
       </div>
       {error && <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-red-800" role="alert">{error}</div>}
       <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
