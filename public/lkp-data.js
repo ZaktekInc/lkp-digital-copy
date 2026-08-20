@@ -92,11 +92,6 @@
       }
       function syncLicenseData(organizationRecords) {
         const namesById = new Map(organizationRecords.map(org => [org.id, org.name]));
-        activationDevices.splice(0, activationDevices.length, ...browserStore.getLicenses().map(device => {
-          const next = clone(device);
-          Object.values(next.licenses).forEach(license => { license.selected = false; });
-          return next;
-        }));
         const records = browserStore.getActivations();
         activations.splice(0, activations.length, ...records.map(item => [
           item.number, item.orderNumber || "—", namesById.get(item.organizationId) || "Архивная организация", item.status, item.vendor,
@@ -105,9 +100,11 @@
         ]));
         Object.keys(activationDetails).forEach(key => delete activationDetails[key]);
         records.forEach(item => {
+          const licenseFile = item.licenseFileDocumentId ? browserStore.getDocument(item.licenseFileDocumentId) : null;
           activationDetails[item.number] = {
             licenses: item.items.flatMap(license => (license.licenseKeys.length ? license.licenseKeys : [{ serialNumber: "" }]).map(key => ({ serial: key.serialNumber, model: license.model, type: license.licenseType, subscription: license.subscriptionEnd, price: license.priceCents / 100, licenseKey: key.licenseKey, licenseStatus: key.status }))),
-            payment: item.paymentStatus, simulator: item.simulator, comment: item.comment, total: item.totalCents / 100
+            payment: item.paymentStatus, simulator: item.simulator, comment: item.comment, total: item.totalCents / 100,
+            licenseFileDocumentId: licenseFile?.isAvailable ? licenseFile.id : ""
           };
         });
         Object.keys(balances).forEach(key => delete balances[key]);
@@ -117,11 +114,13 @@
 
       function syncBrowserData() {
         const organizationRecords = browserStore.getOrganizations();
-        organizations.splice(0, organizations.length, ...organizationRecords.map(org => [org.publicId, org.name, org.inn, org.city, "0", org.phone, org.email, org.id]));
+        const contractRecords = browserStore.getContracts();
+        const allContractRecords = browserStore.getContracts({ includeInactive: true });
+        contracts.splice(0, contracts.length, ...contractRecords);
+        organizations.splice(0, organizations.length, ...organizationRecords.map(org => [org.publicId, org.name, org.inn, org.city, String(allContractRecords.filter(contract => contract.organizationId === org.id).length), org.phone, org.email, org.id]));
         organizationAccessLoaded = true;
         const namesById = new Map(organizationRecords.map(org => [org.id, org.name]));
         const productRecords = browserStore.getProducts();
-        contracts.splice(0, contracts.length, ...browserStore.getContracts());
         products.splice(0, products.length, ...productRecords.map(product => ({
           id: product.code, code: product.code, name: product.name, group: product.groupName, vendor: product.vendor,
           rrp: product.rrpCents / 100, partnerPrice: product.partnerPriceCents / 100, price: product.priceCents / 100,
@@ -132,13 +131,19 @@
         cart.splice(0, cart.length, ...browserStore.getCart().map(row => {
           const product = productRecords.find(item => item.code === row.productCode);
           const org = namesById.get(row.organizationId);
-          return product && org ? { key: `${org}|${product.vendor}|${product.code}`, organizationId: row.organizationId, org, vendor: product.vendor, code: product.code, name: product.name, price: product.priceCents / 100, qty: row.quantity } : null;
+          return product && org ? { key: `${org}|${product.vendor}|${product.code}`, storageKey: row.key, organizationId: row.organizationId, org, vendor: product.vendor, code: product.code, name: product.name, price: product.priceCents / 100, qty: row.quantity } : null;
         }).filter(Boolean));
         createdCarts.splice(0, createdCarts.length, ...browserStore.getCarts().map(item => ({ number: item.number, date: new Intl.DateTimeFormat("ru-RU").format(new Date(item.createdAt)), orders: item.orderNumbers })));
         replaceStoredOrders(browserStore.getOrders());
         syncLicenseData(organizationRecords);
         const allowedNames = new Set(organizations.map(org => org[1]));
         if (!allowedNames.has(selectedLicenseOrg)) selectedLicenseOrg = organizations[0]?.[1] || "";
+        if (activePage === "activate") restoreActivationDraft(selectedLicenseOrg);
+      }
+
+      function sublicenseContractForOrganization(organizationName) {
+        const organizationId = organizations.find(item => item[1] === organizationName)?.[7];
+        return contracts.find(contract => contract.organizationId === organizationId && contract.type === "Сублицензионный договор" && contract.vendor === "Пи Джи Групп" && contract.isActive !== false && contract.status !== "Закрыт");
       }
 
       function saveCartToStore() {
@@ -146,7 +151,7 @@
       }
 
       function saveState() {
-        try { saveCartToStore(); } catch {}
+        try { saveCartToStore(); syncBrowserData(); } catch {}
       }
       const randomNatural = (min, max, used) => { let value; do value = String(Math.floor(Math.random() * (max - min + 1)) + min); while (used.has(value)); return value; };
       const todayLabel = () => new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date());
@@ -172,6 +177,8 @@
 
       function serverOrderDetails(order) {
         const organization = browserStore.getOrganizations({ includeInactive: true }).find(item => item.id === order.organizationId);
+        const contract = browserStore.getContracts({ includeInactive: true }).find(item => item.id === order.contractId);
+        const documents = browserStore.getOrderDocuments(order.number);
         return {
            number: order.number,
            type: order.type || "Покупка товара",
@@ -180,7 +187,8 @@
           payment: order.paymentStatus,
           date: new Intl.DateTimeFormat("ru-RU").format(new Date(order.createdAt)),
           invoice: order.invoiceNumber || "—",
-          agreement: order.agreement || order.deliveryTerms,
+          contractId: order.contractId || "",
+          agreement: contract?.name || order.agreement || order.deliveryTerms,
           org: organization?.name || "Архивная организация",
           name: order.contactName,
           phone: order.contactPhone,
@@ -189,6 +197,8 @@
           cartId: order.cartNumber || "",
           cartNumber: order.cartNumber || "",
           vendor: order.vendor,
+          accountingSystem: order.accountingSystem || browserBusiness.accountingSystemFor(order),
+          documents,
           items: (order.items || []).map(item => ({ code: item.productCode || item.code || "", name: item.name, vendor: item.vendor, price: item.unitPriceCents / 100, qty: item.quantity })),
           total: order.totalCents / 100,
           history: (order.history || []).map(item => ({ ...item, changedByEmail: item.changedBy }))
@@ -269,6 +279,7 @@
 
       const esc = value => String(value).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
       const rub = value => new Intl.NumberFormat("ru-RU").format(value) + " ₽";
+      const booleanFlag = value => `<span class="boolean-flag ${value ? "is-yes" : "is-no"}" role="img" aria-label="${value ? "Да" : "Нет"}">${value ? "✓" : "−"}</span>`;
       syncBrowserData();
       const openDialog = dialog => { if (!dialog) return; if (typeof dialog.showModal === "function") dialog.showModal(); else dialog.setAttribute("open", ""); };
       const closeDialog = dialog => { if (!dialog) return; if (typeof dialog.close === "function") dialog.close(); else dialog.removeAttribute("open"); };
@@ -316,12 +327,12 @@
       const contactTable = () => dataTable(["Отдел", "Должность", "ФИО", "Телефон", "Email"], contacts, "contact", { id: "contacts", org: false });
       const orderTable = (rows = orders, id = "orders", selectedOrg = "", options = {}) => {
         const visibleRows = visibleOrderRows(rows);
-        return `<section class="table-panel">${toolbar(id, { selectedOrg, org: options.org !== false, payment: options.payment === true })}<div class="table-responsive"><table class="table table-sm" data-table="${id}"><thead><tr><th>№ заказа</th><th>№ счета</th><th>Организация</th><th>Дата заказа</th><th>Статус заказа</th><th>Условия поставки</th><th>Стоимость</th><th>Оплата</th><th>Контактное лицо</th></tr></thead><tbody>${visibleRows.map((r, i) => `<tr data-go="order" data-index="${i}" data-order-number="${esc(r[0])}" data-org="${esc(r[2])}" data-payment="${esc(r[7])}"><td><span class="order-number"><span>${esc(r[0])}</span><span class="order-type">${esc(orderTypes[r[0]] || "Покупка товара")}</span></span></td>${r.slice(1).map(v => `<td>${esc(v)}</td>`).join("")}</tr>`).join("")}</tbody></table></div></section>`;
+        return `<section class="table-panel">${toolbar(id, { selectedOrg, org: options.org !== false, payment: options.payment === true })}<div class="table-responsive"><table class="table table-sm" data-table="${id}"><thead><tr><th>№ заказа</th><th>№ счета</th><th>Организация</th><th>Дата заказа</th><th>Статус заказа</th><th>Условия поставки</th><th>Стоимость</th><th>Оплата</th><th>Контактное лицо</th></tr></thead><tbody>${visibleRows.map((r, i) => { const advance = (orderTypes[r[0]] || "") === "Авансовый платеж"; return `<tr data-go="order" data-index="${i}" data-order-number="${esc(r[0])}" data-org="${esc(r[2])}" data-payment="${esc(r[7])}"><td><span class="order-number"><span>${esc(r[0])}</span><span class="order-type ${advance ? "is-advance" : ""}">${esc(orderTypes[r[0]] || "Покупка товара")}</span></span></td><td>${esc(r[1])}</td><td>${esc(r[2])}</td><td>${esc(r[3])}</td><td>${esc(r[4])}</td><td>${esc(r[5])}</td><td class="${advance ? "advance-amount" : ""}">${esc(r[6])}</td><td>${booleanFlag(r[7] === "✓")}</td><td>${esc(r[8])}</td></tr>`; }).join("")}</tbody></table></div></section>`;
       };
       function activationTable() {
         return `<section class="table-panel">${toolbar("activations")}<div class="table-responsive"><table class="table table-sm" data-table="activations">
           <thead><tr><th>№ активации</th><th>№ заказа</th><th>Организация</th><th>Статус активации</th><th>Вендор</th><th>Подписок</th><th>Стоимость</th><th>Оплата</th><th>Дата заказа</th><th>Комментарий</th><th><span class="sr-only">Файл лицензий</span></th></tr></thead>
-          <tbody>${visibleActivations().map((a, i) => `<tr data-go="activation" data-index="${i}" data-org="${esc(a[2])}">${a.map(v => `<td>${esc(v)}</td>`).join("")}<td><button class="btn btn-ghost" type="button" aria-label="Скачать файл лицензий активации ${esc(a[0])}" data-download-license><i data-lucide="download" aria-hidden="true"></i></button></td></tr>`).join("")}</tbody>
+          <tbody>${visibleActivations().map((a, i) => `<tr data-go="activation" data-index="${i}" data-org="${esc(a[2])}">${a.slice(0, 7).map(v => `<td>${esc(v)}</td>`).join("")}<td>${booleanFlag(a[7] === "✓")}</td>${a.slice(8).map(v => `<td>${esc(v)}</td>`).join("")}<td>${activationDetails[a[0]]?.licenseFileDocumentId ? `<button class="btn btn-ghost" type="button" aria-label="Скачать файл лицензий активации ${esc(a[0])}" data-download-license data-activation-number="${esc(a[0])}"><i data-lucide="download" aria-hidden="true"></i></button>` : ""}</td></tr>`).join("")}</tbody>
         </table></div></section>`;
       }
 
@@ -333,7 +344,7 @@
         if (catalogState.loading) return `<section class="table-panel"><div class="panel muted-note">Загрузка организаций и товаров из browser storage…</div></section>`;
         if (catalogState.error) return `<section class="table-panel"><div class="notice" role="alert">Не удалось загрузить каталог: ${esc(catalogState.error)}</div><button class="btn btn-primary" type="button" data-catalog-retry>Повторить</button></section>`;
         const groups = [...new Set(products.map(p => p.group))];
-        const visible = products.filter(p => (!selectedOrg || p.orgs.includes(selectedOrg)) && (!selectedGroup || p.group === selectedGroup));
+        const visible = products.filter(p => (!selectedOrg || selectedOrg.includes("ЗОЛОТОЙ СТАНДАРТ") || p.vendor === "Пи Джи Групп") && (!selectedGroup || p.group === selectedGroup));
         const extra = `<div class="filter-add"><label class="filter-chip"><span class="filter-plus" aria-hidden="true">+</span><span class="sr-only">Группа товара</span><select class="form-select" aria-label="Группа товара" data-catalog-group><option value="" ${selectedGroup ? "" : "selected"}>Группа товара</option>${groups.map(g => `<option value="${esc(g)}" ${g === selectedGroup ? "selected" : ""}>${esc(g)}</option>`).join("")}</select></label></div>`;
         const pricePopover = product => `<span class="info-wrap"><button class="info-trigger" type="button" aria-label="Показать уровни цен для ${esc(product.name)}">?</button><span class="info-popover"><span class="price-group"><strong>Стоимость:</strong><span class="price-row"><span>РРЦ (Розница)</span><b>${rub(product.rrp)}</b></span><span class="price-row"><span>Партнер</span><b>${rub(product.partnerPrice)}</b></span><span class="price-row"><span>Постоянный партнер</span><b>${rub(product.price)}</b></span></span></span></span>`;
         return `<section class="table-panel">${toolbar("catalog", { selectedOrg, extra, compactOrg: true })}<div class="table-responsive"><table class="table table-sm catalog-table" data-table="catalog">
@@ -349,8 +360,8 @@
       }
 
       function cartTable(items, org, vendor, id) {
-        const rows = items.map((item, index) => [String(index + 1), esc(item.name), rub(item.price), `<span class="qty"><button class="btn btn-ghost" type="button" aria-label="Уменьшить количество" data-cart-minus="${esc(item.key)}">−</button><input class="form-control qty-input" type="number" min="1" max="500" value="${item.qty}" aria-label="Количество ${esc(item.name)}" data-cart-input="${esc(item.key)}"><button class="btn btn-ghost" type="button" aria-label="Увеличить количество" data-cart-plus="${esc(item.key)}">+</button></span>`, rub(item.price * item.qty)]);
-        return `<section class="table-panel">${toolbar(id, { search: false, org: false })}<div class="table-responsive"><table class="table table-sm cart-items"><colgroup><col><col><col><col><col></colgroup><thead><tr><th>№</th><th>Название</th><th>Цена</th><th>Количество</th><th>Сумма</th></tr></thead><tbody>${rows.map(row => `<tr>${row.map(value => `<td>${value}</td>`).join("")}</tr>`).join("")}</tbody></table></div></section>`;
+        const rows = items.map((item, index) => { const storageKey = item.storageKey || item.key; return [String(index + 1), esc(item.name), rub(item.price), `<span class="qty"><button class="btn btn-ghost" type="button" aria-label="Уменьшить количество" data-cart-minus="${esc(storageKey)}">−</button><input class="form-control qty-input" type="number" min="1" max="500" step="1" value="${item.qty}" aria-label="Количество ${esc(item.name)}" data-cart-input="${esc(storageKey)}"><button class="btn btn-ghost" type="button" aria-label="Увеличить количество" data-cart-plus="${esc(storageKey)}">+</button></span>`, rub(item.price * item.qty), `<button class="btn cart-remove-button" type="button" aria-label="Удалить ${esc(item.name)} из корзины" data-cart-remove-item="${esc(storageKey)}"><i data-lucide="x" aria-hidden="true"></i></button>`]; });
+        return `<section class="table-panel">${toolbar(id, { search: false, org: false })}<div class="table-responsive"><table class="table table-sm cart-items"><colgroup><col><col><col><col><col><col></colgroup><thead><tr><th>№</th><th>Название</th><th>Цена</th><th>Количество</th><th>Сумма</th><th><span class="sr-only">Удаление</span></th></tr></thead><tbody>${rows.map(row => `<tr>${row.map(value => `<td>${value}</td>`).join("")}</tr>`).join("")}</tbody></table></div></section>`;
       }
 
       function renderCart() {
@@ -369,8 +380,10 @@
             const total = items.reduce((sum, i) => sum + i.price * i.qty, 0);
             const groupId = `cart-${oi}-${vi}`;
             const organizationId = organizations.find(item => item[1] === org)?.[7] || "";
-            const contractOptions = contracts.map(contract => `<option value="${esc(contract.id)}">${esc(contract.name)}</option>`).join("");
-            return `<section class="vendor-block"><div class="vendor-head"><div class="page-title">${esc(vendor)}</div><label class="form-label">Договор<select class="form-select" data-cart-contract data-organization-id="${esc(organizationId)}" data-vendor="${esc(vendor)}">${contractOptions}</select></label></div>
+            const matchingContracts = contracts.filter(contract => contract.organizationId === organizationId && contract.vendor === vendor && contract.type === "Договор поставки" && contract.isActive !== false && contract.status !== "Закрыт");
+            const contractOptions = matchingContracts.map(contract => `<option value="${esc(contract.id)}">${esc(contract.name)}</option>`).join("");
+            const contractControl = matchingContracts.length ? `<label class="form-label">Договор<select class="form-select" data-cart-contract data-organization-id="${esc(organizationId)}" data-vendor="${esc(vendor)}">${contractOptions}</select></label>` : `<div class="notice">Нет действующего договора поставки с ${esc(vendor)}</div>`;
+            return `<section class="vendor-block"><div class="vendor-head"><div class="page-title">${esc(vendor)}</div>${contractControl}</div>
               ${cartTable(items, org, vendor, groupId)}
               <div class="comment-line"><div class="comment-box"><div class="form-check"><input class="form-check-input" type="checkbox" id="comment-${groupId}" data-comment-toggle="${groupId}"><label class="form-check-label" for="comment-${groupId}">Добавить комментарий</label></div><textarea class="form-control" rows="2" placeholder="Комментарий к предварительному заказу" data-comment-box="${groupId}" data-comment-organization-id="${esc(organizationId)}" data-comment-vendor="${esc(vendor)}" hidden></textarea></div><div class="sum-block"><div class="label">Сумма по договору</div><div>${rub(total)}</div></div></div>
             </section>`;
@@ -378,7 +391,8 @@
           return `<section class="cart-org"><div class="cart-org-head"><div class="page-title">${esc(org)}</div><div class="page-title">${rub(orgTotal)}</div></div><div class="cart-user"><div><div class="label">ФИО</div><div>Иванов Иван Иванович</div></div><div><div class="label">Email</div><div>example@mail.ru</div></div><div><div class="label">Телефон</div><div>+79876543210</div></div></div>${vendorHtml}</section>`;
         }).join("");
         const total = cart.reduce((sum, i) => sum + i.price * i.qty, 0);
-        return `<div class="page-head"><div class="page-title">Корзина</div><button class="btn btn-primary" type="button" data-page="catalog">Каталог</button></div>${body}<div class="cart-bottom"><button class="btn btn-primary" type="button" data-checkout>Оформить заказ</button><div class="sum-block"><span class="page-title">Итого: ${rub(total)}</span></div></div><div class="notice" role="alert" data-checkout-error aria-live="assertive"></div><div class="cart-warning"><div class="page-title">Внимание!</div><div>Детали и адрес доставки после заказа будут обговорены с вашим менеджером</div></div>`;
+        const checkoutBlocked = cart.some(item => !browserBusiness.getPurchaseAvailability(item.organizationId, item.vendor).canPurchase);
+        return `<div class="page-head"><div class="page-title">Корзина</div><button class="btn btn-primary" type="button" data-page="catalog">Каталог</button></div>${body}<div class="cart-bottom"><button class="btn btn-primary" type="button" data-checkout ${checkoutBlocked ? "disabled" : ""}>Оформить заказ</button><div class="sum-block"><span class="page-title">Итого: ${rub(total)}</span></div></div><div class="notice" role="alert" data-checkout-error aria-live="assertive"></div><div class="cart-warning"><div class="page-title">Внимание!</div><div>Детали и адрес доставки после заказа будут обговорены с вашим менеджером</div></div><dialog class="confirm-dialog" data-cart-remove-dialog><div class="page-title">Подтвердите</div><div class="notice">Удалить товар из корзины?</div><div class="confirm-actions"><button class="btn btn-primary" type="button" data-cart-remove-confirm>OK</button><button class="btn" type="button" data-cart-remove-cancel>Отмена</button></div></dialog>`;
       }
 
       async function createCartOrders() {
@@ -409,7 +423,7 @@
         if (!result) return `<div class="page-head"><div class="page-title">Корзина</div></div><div class="panel muted-note">Созданных заказов в этой корзине нет.</div>`;
         const cards = result.orders.map(number => {
           const details = orderDetails[number]; if (!details) return "";
-          return `<section class="order-block cart-result-order"><div class="page-head"><div class="page-title"><a href="#" data-order-number="${esc(number)}">Заказ №${esc(number)}</a> на ${rub(details.total)}</div></div><div class="order-columns"><div><div class="order-field"><div class="label">Организация</div><div>${esc(details.org)}</div></div><div class="order-field"><div class="label">ФИО</div><div>${esc(details.name)}</div></div><div class="order-field"><div class="label">Телефон</div><div>${esc(details.phone)}</div></div><div class="order-field"><div class="label">E-mail</div><div><a href="mailto:${esc(details.email)}">${esc(details.email)}</a></div></div></div><div><div class="order-field"><div class="label">Статус заказа</div><div><strong>${esc(details.status)}</strong></div></div><div class="order-field"><div class="label">Тип заказа</div><div>${esc(details.type)}</div></div><div class="order-field"><div class="label">Статус оплаты</div><div>${esc(details.payment)}</div></div><div class="order-field"><div class="label">Дата заказа</div><div>${esc(details.date)}</div></div><div class="order-field"><div class="label">Номер счета</div><div>${esc(details.invoice || "—")}</div></div><div class="order-field"><div class="label">Договор</div><div>${esc(details.agreement)}</div></div></div></div></section>`;
+          return `<section class="order-block cart-result-order"><div class="page-head"><div class="page-title"><a href="#" data-order-number="${esc(number)}">Заказ №${esc(number)}</a> на ${rub(details.total)}</div></div><div class="order-columns"><div><div class="order-field"><div class="label">Организация</div><div>${esc(details.org)}</div></div><div class="order-field"><div class="label">ФИО</div><div>${esc(details.name)}</div></div><div class="order-field"><div class="label">Телефон</div><div>${esc(details.phone)}</div></div><div class="order-field"><div class="label">E-mail</div><div><a href="mailto:${esc(details.email)}">${esc(details.email)}</a></div></div>${details.comment ? `<div class="order-field"><div>Комментарий: ${esc(details.comment)}</div></div>` : ""}</div><div><div class="order-field"><div class="label">Статус заказа</div><div><strong>${esc(details.status)}</strong></div></div><div class="order-field"><div class="label">Тип заказа</div><div>${esc(details.type)}</div></div><div class="order-field"><div class="label">Статус оплаты</div><div>${esc(details.payment)}</div></div><div class="order-field"><div class="label">Дата заказа</div><div>${esc(details.date)}</div></div><div class="order-field"><div class="label">Номер счета</div><div>${esc(details.invoice || "—")}</div></div><div class="order-field"><div class="label">Договор</div><div>${esc(details.agreement)}</div></div></div></div></section>`;
         }).join("");
         return `<div class="page-head"><div class="page-title">Корзина № ${esc(result.number)}</div></div>${cards}<div class="simulator-note">Корзина и заказы сохранены в browser storage.</div>`;
       }
@@ -442,6 +456,80 @@
         return `<label class="checkbox-cell"><input class="form-check-input ${license.selected ? "is-checked" : ""}" type="checkbox" ${license.selected ? "checked" : ""} aria-checked="${license.selected}" data-license-cell="${key}" data-device-index="${deviceIndex}" aria-label="${licenseLabels[key]} для ${activationDevices[deviceIndex].serial}"><span class="${currentClass}">${license.current}${license.over180 ? `<span class="badge-180">180+</span>` : ""}</span><span class="license-new">${license.next}</span></label>`;
       }
 
+      function applySerialDemoState(device, serial) {
+        const lastDigit = Number(serial.slice(-1));
+        const dayOffsets = { 2: -90, 3: -15, 4: 15, 5: 45, 6: 90, 7: 150, 8: 210, 9: 300 };
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const currentEnd = lastDigit <= 1 ? null : new Date(today);
+        if (currentEnd) currentEnd.setDate(currentEnd.getDate() + dayOffsets[lastDigit]);
+        const nextEnd = new Date(currentEnd && currentEnd > today ? currentEnd : today);
+        nextEnd.setDate(nextEnd.getDate() + 365);
+        const twoMonthsFromToday = new Date(today);
+        twoMonthsFromToday.setMonth(twoMonthsFromToday.getMonth() + 2);
+        const over180Date = new Date(today);
+        over180Date.setDate(over180Date.getDate() + 180);
+        const over180 = Boolean(currentEnd && currentEnd > over180Date);
+        const currentState = !currentEnd ? "none" : currentEnd < today ? "expired" : currentEnd < twoMonthsFromToday ? "expiring" : "active";
+        const dateFormatter = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
+        const demoState = {
+          current: currentEnd ? `Текущая до ${dateFormatter.format(currentEnd)}` : "Нет текущей подписки",
+          currentState,
+          next: `Новая до ${dateFormatter.format(nextEnd)}`,
+          over180
+        };
+        licenseKeys.forEach(key => {
+          const license = device.licenses[key];
+          if (license.available) Object.assign(license, demoState);
+        });
+      }
+
+      function restoreActivationDraft(organizationName) {
+        const organizationId = organizations.find(item => item[1] === organizationName)?.[7];
+        const rows = organizationId ? browserStore.getActivationDraft(organizationId) : [];
+        const storedLicenses = browserStore.getLicenses();
+        const template = clone(storedLicenses[0]);
+        if (!rows.length) {
+          activationDevices.splice(0, activationDevices.length, ...storedLicenses.map(device => {
+            const next = clone(device);
+            Object.values(next.licenses).forEach(license => { license.selected = false; });
+            return next;
+          }));
+          lastCheckedSerial = "";
+          activationPreviewVisible = false;
+          return;
+        }
+        activationDevices.splice(0, activationDevices.length, ...rows.map(row => {
+          const serial = typeof row === "string" ? row : row.serial;
+          const selectedLicenses = typeof row === "string" ? [] : row.selectedLicenses || [];
+          const device = clone(template);
+          device.serial = serial;
+          applySerialDemoState(device, serial);
+          licenseKeys.forEach(key => { device.licenses[key].selected = selectedLicenses.includes(key); });
+          return device;
+        }));
+        lastCheckedSerial = activationDevices[0]?.serial || "";
+        activationPreviewVisible = activationDevices.length > 0;
+      }
+
+      function saveActivationDraft() {
+        const organizationId = organizations.find(item => item[1] === selectedLicenseOrg)?.[7];
+        if (organizationId) browserStore.saveActivationDraft(organizationId, activationDevices.map(device => ({
+          serial: device.serial,
+          selectedLicenses: licenseKeys.filter(key => device.licenses[key].available && device.licenses[key].selected)
+        })));
+      }
+
+      function activationDeviceSelection(device) {
+        const available = licenseKeys.map(key => device.licenses[key]).filter(license => license.available);
+        const selectedCount = available.filter(license => license.selected).length;
+        return { any: selectedCount > 0, all: available.length > 0 && selectedCount === available.length, partial: selectedCount > 0 && selectedCount < available.length };
+      }
+
+      function selectedActivationDeviceCount() {
+        return activationDevices.filter(device => activationDeviceSelection(device).all).length;
+      }
+
       function licensePriceHelp() {
         return `<span class="info-wrap"><button class="info-trigger" type="button" aria-label="Показать цены лицензий">?</button><span class="info-popover"><span class="price-group"><strong>Сервис обновлений</strong><span class="price-row"><span>РРЦ (Розница)</span><b>4 000 ₽</b></span><span class="price-row"><span>Партнер</span><b>2 000 ₽</b></span><span class="price-row"><span>Постоянный партнер</span><b>2 000 ₽</b></span></span><span class="price-group"><strong>Маркировка</strong><span class="price-row"><span>РРЦ (Розница)</span><b>1 000 ₽</b></span><span class="price-row"><span>Партнер</span><b>500 ₽</b></span><span class="price-row"><span>Постоянный партнер</span><b>500 ₽</b></span></span><span class="price-group"><strong>Расширенный функционал</strong><span class="price-row"><span>РРЦ (Розница)</span><b>2 000 ₽</b></span><span class="price-row"><span>Партнер</span><b>1 000 ₽</b></span><span class="price-row"><span>Постоянный партнер</span><b>1 000 ₽</b></span></span></span></span>`;
       }
@@ -449,13 +537,11 @@
       function renderActivationPreviewTable() {
         const headers = licenseKeys.map(key => { const selected = allSelectedForColumn(key); return `<th><label class="license-choice"><input class="form-check-input ${selected ? "is-checked" : ""}" type="checkbox" ${selected ? "checked" : ""} aria-checked="${selected}" data-license-column="${key}" aria-label="Выбрать весь столбец ${licenseLabels[key]}"><span class="license-heading"><span>${licenseLabels[key]}</span><span class="license-column-price">${licenseHeaderPrices[key]}</span></span></label></th>`; }).join("");
         const rows = activationDevices.map((device, deviceIndex) => {
-          const available = licenseKeys.map(key => device.licenses[key]).filter(license => license.available);
-          const rowSelected = available.length > 0 && available.every(license => license.selected);
           const rowSum = licenseKeys.reduce((sum, key) => sum + (device.licenses[key].available && device.licenses[key].selected ? device.licenses[key].price : 0), 0);
-          return `<tr><td><input class="form-check-input ${rowSelected ? "is-checked" : ""}" type="checkbox" ${rowSelected ? "checked" : ""} aria-checked="${rowSelected}" data-license-row="${deviceIndex}" aria-label="Выбрать строку ${device.serial}"></td><td><span class="stacked-value"><span>${device.serial}</span><span class="text-muted text-small">${device.model}</span></span></td>${licenseKeys.map(key => `<td>${licenseCell(deviceIndex, key)}</td>`).join("")}<td class="text-end text-nowrap">${rub(rowSum)} ${licensePriceHelp()}</td></tr>`;
+          const selection = activationDeviceSelection(device);
+          return `<tr class="activation-device-row${selection.any ? " is-selected" : ""}" aria-selected="${selection.any}"><td><input class="form-check-input ${selection.all ? "is-checked" : selection.partial ? "is-indeterminate" : ""}" type="checkbox" ${selection.all ? "checked" : ""} aria-checked="${selection.partial ? "mixed" : selection.all}" data-license-device-select="${deviceIndex}" ${selection.partial ? "data-indeterminate" : ""} aria-label="Выбрать все подписки для серийного номера ${device.serial}"></td><td><span class="stacked-value"><span>${device.serial}</span><span class="text-muted text-small">${device.model}</span></span></td>${licenseKeys.map(key => `<td>${licenseCell(deviceIndex, key)}</td>`).join("")}<td class="text-end text-nowrap">${rub(rowSum)} ${licensePriceHelp()}</td></tr>`;
         }).join("");
-        const allSelected = allAvailableSelected();
-        return `<div class="table-responsive"><table class="table table-sm"><thead><tr><th><input class="form-check-input ${allSelected ? "is-checked" : ""}" type="checkbox" ${allSelected ? "checked" : ""} aria-checked="${allSelected}" data-license-all aria-label="Выбрать все доступные ячейки"></th><th>Серийный номер</th>${headers}<th class="text-end">Сумма</th></tr></thead><tbody>${rows}</tbody></table></div><div class="mini-total">Итого: ${rub(activationTotal())}</div>`;
+        return `<div class="table-responsive"><table class="table table-sm"><thead><tr><th><span class="sr-only">Выбор подписок строки</span></th><th>Серийный номер</th>${headers}<th class="text-end">Сумма</th></tr></thead><tbody>${rows}</tbody></table></div><div class="mini-total">Итого: ${rub(activationTotal())}</div>`;
       }
 
       function licenseNomenclature(key) {
@@ -477,56 +563,27 @@
       function createActivationRecord(comment = "") {
         const selected = selectedLicenseItems();
         if (!selected.length) return null;
-        const [activationNumber] = browserStore.reserveNumbers("activation", 1);
-        const status = lastCheckedSerial === "0000000000000000" ? "Ошибка" : "В работе";
-        const total = selected.reduce((sum, item) => sum + item.price, 0);
         const organizationId = organizations.find(item => item[1] === selectedLicenseOrg)?.[7];
         if (!organizationId) throw new Error("Организация не найдена");
-        if (status !== "Ошибка") browserStore.updateBalance(organizationId, Math.max(0, (balances[selectedLicenseOrg] || 0) - total));
-        const payment = status === "Ошибка" ? "—" : "Оплачено";
-        browserStore.createActivation({
-          id: activationNumber, number: activationNumber, orderNumber: "", organizationId, status, vendor: "Пэй Киоск",
-          totalCents: total * 100, paymentStatus: payment, orderedAt: new Date().toISOString(), comment: comment || "", simulator: "ФР-Крипто",
-          items: selected.map((item, index) => ({ id: `${activationNumber}-${index + 1}`, model: item.model, licenseType: item.type, subscriptionEnd: item.subscription, priceCents: item.price * 100, licenseKeys: status === "Ошибка" ? [] : [{ id: `key-${activationNumber}-${index + 1}`, serialNumber: item.serial, licenseKey: `DEMO-${activationNumber}-${index + 1}`, status: "Активна" }] }))
+        const activation = browserBusiness.createActivation({
+          organizationId, vendor: "Пэй Киоск", comment, isError: lastCheckedSerial === "0000000000000000",
+          items: selected.map(item => ({ model: item.model, licenseType: item.type, subscriptionEnd: item.subscription, priceCents: item.price * 100, serialNumber: item.serial }))
         });
         syncBrowserData();
-        return activations.find(item => item[0] === activationNumber) || null;
+        return activations.find(item => item[0] === activation.number) || null;
       }
 
       function completeActivation(activationNumber) {
-        const record = browserStore.getActivation(activationNumber);
-        if (!record || record.status !== "В работе") return activations.find(item => item[0] === activationNumber);
-        const [orderNumber] = browserStore.reserveNumbers("order", 1);
-        const invoice = `ПГ-${randomNatural(100, 999, new Set())}`;
-        browserStore.createOrder({
-          number: orderNumber, cartNumber: "", organizationId: record.organizationId, vendor: record.vendor, type: "Активация лицензий", activationNumber,
-          status: "Отгружен", paymentStatus: "Оплачено", invoiceNumber: invoice, deliveryTerms: "Предоплата 100%",
-          agreement: "Сублицензионный договор (Предоплата 100%) от 15.12.2025", contactName: "Иванов Иван Иванович",
-          contactPhone: "+7 987 654 32 10", contactEmail: "aqaglobal+testZS@aqsi.ru", comment: `Активация № ${activationNumber}`,
-          createdAt: new Date().toISOString(), totalCents: record.totalCents,
-          items: record.items.map((item, index) => ({ code: `LICENSE-${index + 1}`, name: `${item.licenseType} — ${item.model}`, vendor: record.vendor, quantity: 1, unitPriceCents: item.priceCents, lineTotalCents: item.priceCents })),
-          history: [{ fromStatus: null, toStatus: "Отгружен", changedAt: new Date().toISOString(), changedBy: "ЛКП" }]
-        });
-        browserStore.updateActivation(activationNumber, { orderNumber, status: "Выполнена", paymentStatus: "Оплачено" });
+        browserBusiness.completeActivation(activationNumber);
         syncBrowserData();
         return activations.find(item => item[0] === activationNumber) || null;
       }
 
       function createAdvanceOrder(amount) {
-        const [number] = browserStore.reserveNumbers("order", 1);
-        const invoice = `ПГ-${randomNatural(100, 999, new Set())}`;
         const organizationId = organizations.find(item => item[1] === selectedLicenseOrg)?.[7];
         if (!organizationId) throw new Error("Организация не найдена");
-        browserStore.createOrder({
-          number, cartNumber: "", organizationId, vendor: "Пи Джи Групп", type: "Авансовый платеж", status: "Принят",
-          paymentStatus: "Оплачено", invoiceNumber: invoice, deliveryTerms: "Предоплата 100%",
-          agreement: "Сублицензионный договор (Предоплата 100%) от 15.12.2025", contactName: "Иванов Иван Иванович",
-          contactPhone: "+7 987 654 32 10", contactEmail: "aqaglobal+testZS@aqsi.ru", comment: "", createdAt: new Date().toISOString(),
-          totalCents: amount * 100, items: [{ code: "ADVANCE", name: "Авансовый платеж", vendor: "Пи Джи Групп", quantity: 1, unitPriceCents: amount * 100, lineTotalCents: amount * 100 }],
-          history: [{ fromStatus: null, toStatus: "Принят", changedAt: new Date().toISOString(), changedBy: "ЛКП" }]
-        });
-        browserStore.updateBalance(organizationId, (balances[selectedLicenseOrg] || 0) + amount);
+        const order = browserBusiness.createAdvanceOrder({ organizationId, amountCents: amount * 100 });
         syncBrowserData();
-        return orders.find(item => item[0] === number) || null;
+        return orders.find(item => item[0] === order.number) || null;
       }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import BooleanFlag from "../boolean-flag";
 
 type ReferenceItem = BrowserReferenceItem;
 
@@ -65,6 +66,7 @@ export default function ReferencePanel({ kind, title }: { kind: string; title: s
         name: String(values.get("name") || ""),
         description: String(values.get("description") || ""),
         isActive: values.get("isActive") === "on",
+        ...(kind === "contract-types" && selected.name === "Сублицензионный договор" ? { contractVersion: Number(values.get("contractVersion")) } : {}),
       });
       setSelected(item);
       load();
@@ -87,7 +89,7 @@ export default function ReferencePanel({ kind, title }: { kind: string; title: s
           {loading ? <p className="p-5 text-[#65758b]">Загрузка…</p> : items.length === 0 ? <p className="p-5 text-[#65758b]">Записей пока нет.</p> : (
             <table className="w-full border-collapse text-left text-sm">
               <thead className="bg-[#f5f7fa] text-[#526176]"><tr><th className="px-4 py-3">Код</th><th className="px-4 py-3">Название</th><th className="px-4 py-3">Статус</th></tr></thead>
-              <tbody>{items.map((item) => <tr key={item.id} onClick={() => setSelected(item)} className={`cursor-pointer border-t border-[#edf0f4] hover:bg-[#f7faff] ${selected?.id === item.id ? "bg-[#edf5ff]" : ""}`}><td className="px-4 py-3 font-mono text-xs">{item.code}</td><td className="px-4 py-3 font-semibold">{item.name}</td><td className="px-4 py-3">{item.isActive ? "Активна" : "Неактивна"}</td></tr>)}</tbody>
+              <tbody>{items.map((item) => <tr key={item.id} onClick={() => setSelected(item)} className={`cursor-pointer border-t border-[#edf0f4] hover:bg-[#f7faff] ${selected?.id === item.id ? "bg-[#edf5ff]" : ""}`}><td className="px-4 py-3 font-mono text-xs">{item.code}</td><td className="px-4 py-3 font-semibold">{item.name}</td><td className="px-4 py-3"><BooleanFlag value={item.isActive} label={item.isActive ? "Активна" : "Неактивна"} /></td></tr>)}</tbody>
             </table>
           )}
         </div>
@@ -104,6 +106,7 @@ export default function ReferencePanel({ kind, title }: { kind: string; title: s
             <label className="block text-sm">Код<input required name="code" defaultValue={selected.code} className="mt-1 w-full rounded-lg border border-[#b8c7da] px-3 py-2" /></label>
             <label className="block text-sm">Название<input required name="name" defaultValue={selected.name} className="mt-1 w-full rounded-lg border border-[#b8c7da] px-3 py-2" /></label>
             <label className="block text-sm">Описание<textarea name="description" defaultValue={selected.description} className="mt-1 w-full rounded-lg border border-[#b8c7da] px-3 py-2" /></label>
+            {kind === "contract-types" && selected.name === "Сублицензионный договор" && <label className="block text-sm">Версия договора<input required min="1" step="1" type="number" name="contractVersion" defaultValue={selected.contractVersion || 1} className="mt-1 w-full rounded-lg border border-[#b8c7da] px-3 py-2" /></label>}
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="isActive" defaultChecked={selected.isActive} /> Активна</label>
             <button disabled={saving} className="rounded-lg bg-[#1769c2] px-4 py-2 font-semibold text-white disabled:opacity-50">Сохранить</button>
           </form>}

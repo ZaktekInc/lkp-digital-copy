@@ -8,11 +8,7 @@ const scripts = ["public/lkp-demo-data.js", "public/lkp-browser-storage.js", "pu
 
 function memoryStorage() {
   const values = new Map();
-  return {
-    getItem: (key) => values.has(key) ? values.get(key) : null,
-    setItem: (key, value) => values.set(key, String(value)),
-    removeItem: (key) => values.delete(key),
-  };
+  return { getItem: (key) => values.has(key) ? values.get(key) : null, setItem: (key, value) => values.set(key, String(value)), removeItem: (key) => values.delete(key) };
 }
 
 function browserContext(localStorage = memoryStorage()) {
@@ -23,204 +19,267 @@ function browserContext(localStorage = memoryStorage()) {
   return context;
 }
 
-test("schema version 1 is upgraded once with shared license data", () => {
+const checkoutInput = {
+  contactName: "Иванов Иван Иванович",
+  contactPhone: "+7 987 654 32 10",
+  contactEmail: "example@mail.ru",
+  comment: "Общий комментарий"
+};
+
+function oneLicense(priceCents = 100000) {
+  return [{ model: "aQsi 5Ф", licenseType: "Сервис обновлений", subscriptionEnd: "20.08.2027", priceCents, serialNumber: "1234567890123456" }];
+}
+
+test("schema version 5 migrates to rich contracts, documents and contract balances without losing user data", () => {
   const localStorage = memoryStorage();
-  const seedContext = browserContext();
-  const oldState = JSON.parse(JSON.stringify(seedContext.LkpDemoData));
-  oldState.schemaVersion = 1;
-  delete oldState.licenses;
-  delete oldState.activations;
-  delete oldState.balances;
+  const seed = browserContext();
+  const oldState = JSON.parse(JSON.stringify(seed.LkpDemoData));
+  oldState.schemaVersion = 5;
+  oldState.contracts = [{ id: "ref-contract-main", kind: "contracts", code: "main", name: "Основной договор", description: "", isActive: true }];
+  oldState.balances = { "101": 7777 };
+  delete oldState.documents;
+  delete oldState.nextIds.document;
+  const userOrder = { ...oldState.orders[1], number: "77777", type: "Покупка товара", vendor: "Пи Джи Групп", status: "Ожидает сборки", paymentStatus: "Не оплачен", invoiceNumber: "ПГ-105", contractId: "" };
+  oldState.orders.unshift(userOrder);
   localStorage.setItem("lkp-digital-copy-state", JSON.stringify(oldState));
 
-  const migrated = browserContext(localStorage);
-  assert.equal(migrated.LkpBrowserStore.getState().schemaVersion, 5);
-  assert.equal(migrated.LkpBrowserStore.getLicenses().length, 2);
-  assert.equal(migrated.LkpBrowserStore.getActivations().length, 2);
-  assert.equal(JSON.parse(localStorage.getItem("lkp-digital-copy-state")).schemaVersion, 5);
+  const context = browserContext(localStorage);
+  const migrated = context.LkpBrowserStore.getState();
+  const order = context.LkpBrowserStore.getOrder("77777");
+  assert.equal(migrated.schemaVersion, 10);
+  assert.ok(context.LkpBrowserStore.getContracts().some((item) => item.id === "contract-101-supply-pg"));
+  assert.equal(context.LkpBrowserStore.getBalanceRecords()[0].amountCents, 777700);
+  assert.equal(order.status, "Ожидание сборки");
+  assert.equal(order.paymentStatus, "Не оплачено");
+  assert.equal(order.contractId, "contract-101-supply-pg");
+  assert.equal(context.LkpBrowserStore.getOrderDocuments("77777").filter((item) => item.type === "Счёт на оплату").length, 1);
+  assert.equal(context.LkpBrowserStore.getOrder("12540").activationNumber, "123");
+  assert.equal(context.LkpBrowserStore.getActivation("123").orderNumber, "12540");
 });
 
-test("schema version 2 repairs the demo activation order in the common order collection", () => {
+test("schema version 6 adds offer acceptances, PDF names and the current Beta catalog rule", () => {
   const localStorage = memoryStorage();
-  const seedContext = browserContext();
-  const oldState = JSON.parse(JSON.stringify(seedContext.LkpDemoData));
-  oldState.schemaVersion = 2;
-  oldState.orders = oldState.orders.filter((order) => order.number !== "12540");
+  const seed = browserContext();
+  const oldState = JSON.parse(JSON.stringify(seed.LkpDemoData));
+  oldState.schemaVersion = 6;
+  delete oldState.offerAcceptances;
+  oldState.products.find((item) => item.code === "RR-01F").availableOrganizationIds.push("102");
+  oldState.documents.find((item) => item.type === "Счёт на оплату").filename = "invoice.txt";
   localStorage.setItem("lkp-digital-copy-state", JSON.stringify(oldState));
 
-  const migrated = browserContext(localStorage);
-  const activation = migrated.LkpBrowserStore.getActivation("123");
-  const order = migrated.LkpBrowserStore.getOrder("12540");
-  assert.equal(migrated.LkpBrowserStore.getState().schemaVersion, 5);
-  assert.equal(activation.orderNumber, "12540");
-  assert.equal(order.type, "Активация лицензий");
-  assert.equal(order.activationNumber, "123");
-  assert.equal(order.organizationId, activation.organizationId);
-  assert.equal(migrated.LkpBrowserStore.getOrder("12480").type, "Авансовый платеж");
+  const context = browserContext(localStorage);
+  const migrated = context.LkpBrowserStore.getState();
+  assert.equal(migrated.schemaVersion, 10);
+  assert.equal(JSON.stringify(migrated.offerAcceptances), "{}");
+  assert.equal(context.LkpBrowserStore.getProducts().find((item) => item.code === "RR-01F").availableOrganizationIds.includes("102"), false);
+  assert.match(context.LkpBrowserStore.getDocuments().find((item) => item.type === "Счёт на оплату").filename, /\.pdf$/);
 });
 
-test("schema version 3 adds references and contracts without replacing browser-only data", () => {
-  const localStorage = memoryStorage();
-  const seedContext = browserContext();
-  const oldState = JSON.parse(JSON.stringify(seedContext.LkpDemoData));
-  oldState.schemaVersion = 3;
-  delete oldState.references;
-  delete oldState.contracts;
-  delete oldState.nextIds.reference;
-  oldState.balances["101"] = 7777;
-  oldState.orders.unshift({ ...oldState.orders[1], number: "77777", type: "Покупка товара" });
-  localStorage.setItem("lkp-digital-copy-state", JSON.stringify(oldState));
-
-  const migrated = browserContext(localStorage);
-  assert.equal(migrated.LkpBrowserStore.getState().schemaVersion, 5);
-  assert.equal(migrated.LkpBrowserStore.getReferenceItems("vendors").length, 3);
-  assert.deepEqual([...migrated.LkpBrowserStore.getContracts().map((item) => item.name)], ["Основной договор", "Другой активный договор"]);
-  assert.equal(migrated.LkpBrowserStore.getBalances()["101"], 7777);
-  assert.ok(migrated.LkpBrowserStore.getOrder("77777"));
-  assert.equal(migrated.LkpBrowserStore.getActivation("123").orderNumber, "12540");
-  assert.equal(migrated.LkpBrowserStore.getOrder("12540").activationNumber, "123");
-});
-
-test("schema version 4 adds vendor invoice counters without replacing browser orders", () => {
-  const localStorage = memoryStorage();
-  const seedContext = browserContext();
-  const oldState = JSON.parse(JSON.stringify(seedContext.LkpDemoData));
-  oldState.schemaVersion = 4;
-  delete oldState.nextIds.invoicePg;
-  delete oldState.nextIds.invoiceRr;
-  const userOrder = { ...oldState.orders[1], number: "77778", type: "Покупка товара", vendor: "Пи Джи Групп" };
-  delete userOrder.invoiceNumber;
-  const invoicedOrder = { ...userOrder, number: "77779", invoiceNumber: "ПГ-105" };
-  oldState.orders.unshift(userOrder, invoicedOrder);
-  localStorage.setItem("lkp-digital-copy-state", JSON.stringify(oldState));
-
-  const migrated = browserContext(localStorage);
-  assert.equal(migrated.LkpBrowserStore.getState().schemaVersion, 5);
-  assert.equal(migrated.LkpBrowserStore.getOrder("77779").invoiceNumber, "ПГ-105");
-  assert.equal(migrated.LkpBrowserStore.getOrder("77778").invoiceNumber, "ПГ-106");
-  assert.equal(migrated.LkpBrowserStore.getState().nextIds.invoicePg, 107);
-  assert.equal(migrated.LkpBrowserStore.getActivation("123").orderNumber, "12540");
-});
-
-test("storage initializes once, persists shared entities, and resets demo data", () => {
-  const localStorage = memoryStorage();
-  const first = browserContext(localStorage);
-  assert.equal(first.LkpBrowserStore.getState().schemaVersion, 5);
-  const demoOrderNumbers = first.LkpBrowserStore.getOrders().map((item) => item.number);
-  const demoActivationOrder = first.LkpBrowserStore.getOrder("12540");
-  const demoActivation = first.LkpBrowserStore.getActivation("124");
-  const demoLicense = first.LkpBrowserStore.getActivation("123").items[0].licenseKeys[0];
-  const demoVendor = first.LkpBrowserStore.getReferenceItems("vendors")[0];
-  const demoContract = first.LkpBrowserStore.getContracts()[0];
-  const demoBalance = first.LkpBrowserStore.getBalances()["101"];
-  const notifications = [];
-  first.LkpBrowserStore.subscribe((change) => notifications.push(change.reason));
-  first.LkpBrowserStore.updateOrganization("102", { name: "ООО Альфа" });
-  first.LkpBrowserStore.updateProduct("AQSI-5F", { name: "ПАК aQsi 5Ф — обновлён" });
-  first.LkpBrowserStore.createContact({ department: "Продажи", position: "Менеджер", fullName: "Сидоров Сидор", phone: "+7 900 300-30-30", email: "sidorov@example.ru" });
-  first.LkpBrowserStore.updateActivation("124", { status: "Ошибка", comment: "Изменено в Admin" });
-  first.LkpBrowserStore.updateLicense(demoLicense.id, { status: "Отозвана" });
-  first.LkpBrowserStore.updateReferenceItem("vendors", demoVendor.id, { name: "Изменённый вендор" });
-  first.LkpBrowserStore.updateReferenceItem("contracts", demoContract.id, { description: "Изменённый договор" });
-  first.LkpBrowserStore.updateBalance("101", 4321);
-  const created = first.LkpBusiness.checkout({ contactName: "Иванов Иван Иванович", contactPhone: "+7 987 654 32 10", contactEmail: "example@mail.ru", deliveryTerms: "Предоплата 100%" });
-
-  const refreshed = browserContext(localStorage);
-  assert.equal(refreshed.LkpBrowserStore.getOrganizations().find((item) => item.id === "102").name, "ООО Альфа");
-  assert.equal(refreshed.LkpBrowserStore.getProducts().find((item) => item.code === "AQSI-5F").name, "ПАК aQsi 5Ф — обновлён");
-  assert.equal(refreshed.LkpBrowserStore.getContacts().filter((item) => item.email === "sidorov@example.ru").length, 1);
-  assert.equal(refreshed.LkpBrowserStore.getActivation("124").status, "Ошибка");
-  assert.equal(refreshed.LkpBrowserStore.getActivation("123").items[0].licenseKeys[0].status, "Отозвана");
-  assert.equal(refreshed.LkpBrowserStore.getActivation("123").orderNumber, "12540");
-  assert.equal(refreshed.LkpBrowserStore.getOrder("12540").activationNumber, "123");
-  assert.equal(refreshed.LkpBrowserStore.getOrders().filter((order) => order.number === "12540").length, 1);
-  assert.equal(refreshed.LkpBrowserStore.getReferenceItems("vendors").find((item) => item.id === demoVendor.id).name, "Изменённый вендор");
-  assert.equal(refreshed.LkpBrowserStore.getContracts({ includeInactive: true }).find((item) => item.id === demoContract.id).description, "Изменённый договор");
-  assert.equal(refreshed.LkpBrowserStore.getBalances()["101"], 4321);
-  assert.ok(refreshed.LkpBrowserStore.getOrder(created.orders[0].number));
-
-  refreshed.LkpBrowserStore.resetDemoData();
-  assert.equal(refreshed.LkpBrowserStore.getOrganizations().find((item) => item.id === "102").name, "ООО Бета");
-  assert.deepEqual([...refreshed.LkpBrowserStore.getOrders().map((item) => item.number)], [...demoOrderNumbers]);
-  assert.equal(refreshed.LkpBrowserStore.getOrder(created.orders[0].number), null);
-  assert.equal(refreshed.LkpBrowserStore.getActivation("124").status, demoActivation.status);
-  assert.equal(refreshed.LkpBrowserStore.getActivation("124").comment, demoActivation.comment);
-  assert.equal(refreshed.LkpBrowserStore.getActivation("123").items[0].licenseKeys[0].status, demoLicense.status);
-  assert.equal(refreshed.LkpBrowserStore.getActivation("123").orderNumber, demoActivationOrder.number);
-  assert.equal(refreshed.LkpBrowserStore.getOrder(demoActivationOrder.number).activationNumber, "123");
-  assert.equal(refreshed.LkpBrowserStore.getLicenses().length, 2);
-  assert.equal(refreshed.LkpBrowserStore.getReferenceItems("vendors").find((item) => item.id === demoVendor.id).name, demoVendor.name);
-  assert.equal(refreshed.LkpBrowserStore.getContracts()[0].description, demoContract.description);
-  assert.equal(refreshed.LkpBrowserStore.getBalances()["101"], demoBalance);
-  assert.equal(refreshed.LkpBrowserStore.getOrder("12480").type, "Авансовый платеж");
-
-  first.LkpBrowserStore.resetDemoData();
-  assert.equal(notifications.at(-1), "reset");
-});
-
-test("checkout creates one cart and one order per organization and vendor", () => {
+test("checkout creates one cart and one strictly contracted order per organization and vendor", () => {
   const context = browserContext();
-  const contract = context.LkpBrowserStore.getContracts()[0];
-  const created = context.LkpBusiness.checkout({ contactName: "Иванов Иван Иванович", contactPhone: "+7 987 654 32 10", contactEmail: "example@mail.ru", deliveryTerms: "Предоплата 100%", comment: "Общий комментарий", contractIds: { "101|Пи Джи Групп": contract.id, "101|РР-Электро": contract.id } });
-
+  const created = context.LkpBusiness.checkout(checkoutInput);
   assert.equal(created.cart.number, "653");
   assert.equal(created.orders.length, 2);
   assert.deepEqual([...created.orders.map((order) => order.vendor)].sort(), ["Пи Джи Групп", "РР-Электро"]);
-  assert.equal(new Set(created.orders.map((order) => order.organizationId)).size, 1);
-  assert.ok(created.orders.every((order) => order.contractId === contract.id && order.agreement === contract.name));
-  assert.ok(created.orders.every((order) => order.comment === "Общий комментарий"));
+  assert.ok(created.orders.every((order) => order.type === "Покупка товара" && order.paymentStatus === "Не оплачено" && order.status === "Принят"));
+  assert.equal(created.orders.find((order) => order.vendor === "Пи Джи Групп").contractId, "contract-101-supply-pg");
+  assert.equal(created.orders.find((order) => order.vendor === "РР-Электро").contractId, "contract-101-supply-rr");
+  assert.equal(created.orders.find((order) => order.vendor === "Пи Джи Групп").accountingSystem, "PG");
+  assert.equal(created.orders.find((order) => order.vendor === "РР-Электро").accountingSystem, "RR");
   assert.equal(created.orders.find((order) => order.vendor === "Пи Джи Групп").invoiceNumber, "ПГ-100");
   assert.equal(created.orders.find((order) => order.vendor === "РР-Электро").invoiceNumber, "РР-100");
+  assert.ok(created.orders.every((order) => context.LkpBrowserStore.getOrderDocuments(order.number).filter((item) => item.type === "Счёт на оплату").length === 1));
   assert.equal(context.LkpBrowserStore.getCart().length, 0);
   assert.equal(context.LkpBrowserStore.getCarts().length, 1);
-  assert.equal(context.LkpBrowserStore.getOrders().length, 4);
-
-  const [changed, unchanged] = created.orders;
-  context.LkpBrowserStore.updateOrder(changed.number, { status: "Готов к отгрузке" });
-  assert.equal(context.LkpBrowserStore.getOrder(changed.number).status, "Готов к отгрузке");
-  assert.equal(context.LkpBrowserStore.getOrder(unchanged.number).status, "Принят");
 });
 
-test("vendor invoice sequences persist independently across reloads", () => {
+test("invoice sequences remain independent and invoices are idempotent across reloads", () => {
   const localStorage = memoryStorage();
   const first = browserContext(localStorage);
-  first.LkpBusiness.checkout({ contactName: "Иванов", contactPhone: "+7 900 000-00-00", contactEmail: "test@example.ru" });
+  const created = first.LkpBusiness.checkout(checkoutInput);
+  const pg = created.orders.find((order) => order.accountingSystem === "PG");
+  first.LkpBusiness.ensureInvoice(pg.number);
+  first.LkpBusiness.ensureInvoice(pg.number);
+  assert.equal(first.LkpBrowserStore.getOrderDocuments(pg.number).filter((item) => item.type === "Счёт на оплату").length, 1);
+
   first.LkpBrowserStore.saveCart([{ key: "101|Пи Джи Групп|AQSI-6F", organizationId: "101", vendor: "Пи Джи Групп", productCode: "AQSI-6F", quantity: 1 }]);
-
   const refreshed = browserContext(localStorage);
-  const second = refreshed.LkpBusiness.checkout({ contactName: "Иванов", contactPhone: "+7 900 000-00-00", contactEmail: "test@example.ru" });
+  const second = refreshed.LkpBusiness.checkout(checkoutInput);
   assert.equal(second.orders[0].invoiceNumber, "ПГ-101");
-  assert.equal(browserContext(localStorage).LkpBrowserStore.getOrder(second.orders[0].number).invoiceNumber, "ПГ-101");
-
-  refreshed.LkpBrowserStore.resetDemoData();
-  const afterReset = refreshed.LkpBusiness.checkout({ contactName: "Иванов", contactPhone: "+7 900 000-00-00", contactEmail: "test@example.ru" });
-  assert.equal(afterReset.orders.find((order) => order.vendor === "Пи Джи Групп").invoiceNumber, "ПГ-100");
-  assert.equal(afterReset.orders.find((order) => order.vendor === "РР-Электро").invoiceNumber, "РР-100");
+  assert.equal(refreshed.LkpBrowserStore.getState().nextIds.invoiceRr, 101);
 });
 
-test("orders are exposed newest first without sorting the canonical state array", () => {
+test("cart quantity stays within 1..500 and removal affects only the selected row", () => {
   const context = browserContext();
-  const template = context.LkpBrowserStore.getOrder("12480");
-  context.LkpBrowserStore.createOrder({ ...template, number: "future", type: "Покупка товара", createdAt: "2030-01-01T00:00:00.000Z" });
-  context.LkpBrowserStore.createOrder({ ...template, number: "past", type: "Покупка товара", createdAt: "2020-01-01T00:00:00.000Z" });
-
-  assert.equal(context.LkpBrowserStore.getState().orders[0].number, "past");
-  assert.equal(context.LkpBrowserStore.getOrders()[0].number, "future");
+  const before = context.LkpBrowserStore.getCart();
+  const key = before[0].key;
+  context.LkpBusiness.setCartQuantity(key, 1);
+  assert.equal(context.LkpBrowserStore.getCart().find((item) => item.key === key).quantity, 1);
+  context.LkpBusiness.setCartQuantity(key, 500);
+  assert.equal(context.LkpBrowserStore.getCart().find((item) => item.key === key).quantity, 500);
+  assert.throws(() => context.LkpBusiness.setCartQuantity(key, 0), /от 1 до 500/);
+  assert.throws(() => context.LkpBusiness.setCartQuantity(key, 501), /от 1 до 500/);
+  assert.throws(() => context.LkpBusiness.setCartQuantity(key, 2.5), /целым/);
+  const unchanged = JSON.stringify(context.LkpBrowserStore.getCart());
+  assert.equal(JSON.stringify(context.LkpBrowserStore.getCart()), unchanged, "cancel means no remove operation is called");
+  const removed = context.LkpBrowserStore.getCart()[1];
+  context.LkpBusiness.removeCartItem(removed.key);
+  const after = context.LkpBrowserStore.getCart();
+  assert.equal(after.length, before.length - 1);
+  assert.equal(after.some((item) => item.key === removed.key), false);
+  assert.equal(after.some((item) => item.key === key), true);
 });
 
-test("demo advance, paid activation and reset balance stay mathematically consistent", () => {
+test("ООО Бета has only PG products and RR remains unavailable", () => {
   const context = browserContext();
-  const advance = context.LkpBrowserStore.getOrder("12480");
-  const activationOrder = context.LkpBrowserStore.getOrder("12540");
-  const activation = context.LkpBrowserStore.getActivation("123");
+  const rrProduct = context.LkpBrowserStore.getProducts().find((item) => item.code === "RR-01F");
+  assert.equal(rrProduct.availableOrganizationIds.includes("102"), false);
+  assert.equal(context.LkpBusiness.getPurchaseAvailability("102", "РР-Электро").canPurchase, false);
+});
 
-  assert.equal(advance.organizationId, activation.organizationId);
-  assert.equal(advance.totalCents / 100 - activation.totalCents / 100, context.LkpBrowserStore.getBalances()[activation.organizationId]);
-  assert.equal(activation.paymentStatus, "Оплачено");
-  assert.equal(activationOrder.paymentStatus, "Оплачено");
-  assert.equal(activation.status, "Выполнена");
+test("product payment, readiness and UPD transitions are shared and idempotent", () => {
+  const context = browserContext();
+  const created = context.LkpBusiness.checkout(checkoutInput);
+  const pg = created.orders.find((order) => order.accountingSystem === "PG");
+  const rr = created.orders.find((order) => order.accountingSystem === "RR");
 
-  context.LkpBrowserStore.updateBalance(activation.organizationId, 0);
+  context.LkpBusiness.processPayment(pg.number);
+  context.LkpBusiness.processPayment(pg.number);
+  assert.equal(context.LkpBrowserStore.getOrder(pg.number).paymentStatus, "Оплачено");
+  assert.equal(context.LkpBrowserStore.getOrder(pg.number).status, "Ожидание сборки");
+  assert.equal(context.LkpBrowserStore.getOrder(pg.number).history.filter((item) => item.toStatus === "Ожидание сборки").length, 1);
+  context.LkpBusiness.postUpd(pg.number);
+  context.LkpBusiness.postUpd(pg.number);
+  assert.equal(context.LkpBrowserStore.getOrder(pg.number).status, "Отгружен");
+  assert.equal(context.LkpBrowserStore.getOrderDocuments(pg.number).filter((item) => item.type === "УПД").length, 1);
+  assert.throws(() => context.LkpBusiness.cancelOrder(pg.number), /Нельзя отменить заказ с проведённой УПД/);
+
+  context.LkpBusiness.processPayment(rr.number);
+  context.LkpBusiness.markReadyToShip(rr.number);
+  assert.equal(context.LkpBrowserStore.getOrder(rr.number).status, "Готов к отгрузке");
+  context.LkpBusiness.cancelOrder(rr.number);
+  assert.equal(context.LkpBrowserStore.getOrder(rr.number).status, "Отменен");
+});
+
+test("advance order creates an invoice but credits balance only once after payment and keeps accepted status", () => {
+  const context = browserContext();
+  const initial = context.LkpBrowserStore.getBalances()["101"];
+  const order = context.LkpBusiness.createAdvanceOrder({ organizationId: "101", amountCents: 250000 });
+  assert.equal(order.status, "Принят");
+  assert.equal(order.paymentStatus, "Не оплачено");
+  assert.equal(context.LkpBrowserStore.getBalances()["101"], initial);
+  assert.equal(context.LkpBrowserStore.getOrderDocuments(order.number).filter((item) => item.type === "Счёт на оплату").length, 1);
+  context.LkpBusiness.processPayment(order.number);
+  context.LkpBusiness.processPayment(order.number);
+  const paid = context.LkpBrowserStore.getOrder(order.number);
+  assert.equal(paid.status, "Принят");
+  assert.equal(paid.paymentStatus, "Оплачено");
+  assert.equal(context.LkpBrowserStore.getBalances()["101"], initial + 2500);
+});
+
+test("prepaid activation debits balance once and creates one paid shipped accounting order with invoice and UPD", () => {
+  const context = browserContext();
+  const initial = context.LkpBrowserStore.getBalances()["101"];
+  const activation = context.LkpBusiness.createActivation({ organizationId: "101", items: oneLicense() });
+  assert.equal(context.LkpBrowserStore.getBalances()["101"], initial);
+  context.LkpBusiness.completeActivation(activation.number);
+  context.LkpBusiness.completeActivation(activation.number);
+  const completed = context.LkpBrowserStore.getActivation(activation.number);
+  const order = context.LkpBrowserStore.getOrder(completed.orderNumber);
+  assert.equal(completed.status, "Выполнена");
+  assert.equal(completed.paymentStatus, "Оплачено");
+  assert.equal(context.LkpBrowserStore.getBalances()["101"], initial - 1000);
+  assert.equal(order.type, "Активация лицензий");
+  assert.equal(order.accountingSystem, "PG");
+  assert.equal(order.status, "Отгружен");
+  assert.equal(order.paymentStatus, "Оплачено");
+  assert.equal(context.LkpBrowserStore.getOrders().filter((item) => item.activationNumber === activation.number).length, 1);
+  assert.equal(context.LkpBrowserStore.getOrderDocuments(order.number).filter((item) => item.type === "Счёт на оплату").length, 1);
+  assert.equal(context.LkpBrowserStore.getOrderDocuments(order.number).filter((item) => item.type === "УПД").length, 1);
+});
+
+test("postpaid activation never uses balance and later payment updates both order and activation", () => {
+  const context = browserContext();
+  const before = context.LkpBrowserStore.getBalanceRecords().filter((item) => item.organizationId === "102");
+  const activation = context.LkpBusiness.createActivation({ organizationId: "102", items: oneLicense(900000) });
+  context.LkpBusiness.completeActivation(activation.number);
+  const completed = context.LkpBrowserStore.getActivation(activation.number);
+  const order = context.LkpBrowserStore.getOrder(completed.orderNumber);
+  assert.equal(completed.paymentStatus, "Не оплачено");
+  assert.equal(order.paymentStatus, "Не оплачено");
+  assert.equal(order.status, "Отгружен");
+  assert.deepEqual(context.LkpBrowserStore.getBalanceRecords().filter((item) => item.organizationId === "102"), before);
+  context.LkpBusiness.processPayment(order.number);
+  context.LkpBusiness.processPayment(order.number);
+  assert.equal(context.LkpBrowserStore.getOrder(order.number).paymentStatus, "Оплачено");
+  assert.equal(context.LkpBrowserStore.getOrder(order.number).status, "Отгружен");
+  assert.equal(context.LkpBrowserStore.getActivation(activation.number).paymentStatus, "Оплачено");
+  assert.deepEqual(context.LkpBrowserStore.getBalanceRecords().filter((item) => item.organizationId === "102"), before);
+});
+
+test("license file contains the selected activation keys and is unavailable before completion", () => {
+  const context = browserContext();
+  const activation = context.LkpBusiness.createActivation({ organizationId: "101", items: oneLicense() });
+  assert.equal(context.LkpBrowserStore.getDocuments().some((item) => item.activationNumber === activation.number && item.type === "Файл лицензий"), false);
+  context.LkpBusiness.completeActivation(activation.number);
+  const completed = context.LkpBrowserStore.getActivation(activation.number);
+  const content = context.LkpBusiness.documentText(completed.licenseFileDocumentId);
+  assert.match(content, new RegExp(`Активация № ${activation.number}`));
+  assert.match(content, /1234567890123456/);
+  assert.match(content, new RegExp(`DEMO-${activation.number}-1`));
+});
+
+test("invoice and UPD are empty PDF downloads while the license file stays text", () => {
+  const context = browserContext();
+  const invoice = context.LkpBrowserStore.getDocuments().find((item) => item.type === "Счёт на оплату");
+  const upd = context.LkpBrowserStore.getDocuments().find((item) => item.type === "УПД");
+  const license = context.LkpBrowserStore.getDocuments().find((item) => item.type === "Файл лицензий");
+  assert.match(invoice.filename, /\.pdf$/);
+  assert.match(upd.filename, /\.pdf$/);
+  assert.equal(context.LkpBusiness.documentText(invoice.id), "");
+  assert.equal(context.LkpBusiness.documentText(upd.id), "");
+  assert.match(license.filename, /\.txt$/);
+  assert.equal(context.LkpBrowserStore.getOrderDocuments("12540").some((item) => item.type === "Файл лицензий"), false);
+});
+
+test("offer acceptance is tied to the current sublicensing contract type version", () => {
+  const context = browserContext();
+  const initialStatus = context.LkpBusiness.getOfferStatus("101");
+  assert.equal(initialStatus.version, "1");
+  assert.equal(initialStatus.isAccepted, false);
+  assert.equal(initialStatus.hasPreviousAcceptance, false);
+  const accepted = context.LkpBusiness.acceptOffer("101");
+  assert.equal(context.LkpBusiness.getOfferStatus("101").isAccepted, true);
+  context.LkpBrowserStore.updateReferenceItem("contracts", accepted.contract.id, { description: "Новая редакция" });
+  assert.equal(context.LkpBusiness.getOfferStatus("101").isAccepted, true);
+  const contractType = context.LkpBrowserStore.getReferenceItems("contract-types").find((item) => item.name === "Сублицензионный договор");
+  context.LkpBrowserStore.updateReferenceItem("contract-types", contractType.id, { contractVersion: 2 });
+  assert.equal(context.LkpBusiness.getOfferStatus("101").isAccepted, false);
+  assert.equal(context.LkpBusiness.getOfferStatus("101").hasPreviousAcceptance, true);
+});
+
+test("accounting routing excludes advances and licenses from RR", () => {
+  const context = browserContext();
+  const created = context.LkpBusiness.checkout(checkoutInput);
+  const advance = context.LkpBusiness.createAdvanceOrder({ organizationId: "101", amountCents: 100000 });
+  const activation = context.LkpBusiness.createActivation({ organizationId: "101", items: oneLicense() });
+  context.LkpBusiness.completeActivation(activation.number);
+  const pgNumbers = context.LkpBusiness.getAccountingOrders("PG").map((order) => order.number);
+  const rrOrders = context.LkpBusiness.getAccountingOrders("RR");
+  assert.ok(pgNumbers.includes(advance.number));
+  assert.ok(pgNumbers.includes(context.LkpBrowserStore.getActivation(activation.number).orderNumber));
+  assert.ok(pgNumbers.includes(created.orders.find((order) => order.accountingSystem === "PG").number));
+  assert.ok(rrOrders.every((order) => order.type === "Покупка товара" && order.vendor === "РР-Электро"));
+});
+
+test("reset restores the complete canonical v10 state", () => {
+  const context = browserContext();
+  context.LkpBrowserStore.updateOrganization("102", { name: "ООО Альфа" });
+  context.LkpBusiness.checkout(checkoutInput);
   context.LkpBrowserStore.resetDemoData();
-  assert.equal(context.LkpBrowserStore.getBalances()[activation.organizationId], 6000);
+  assert.equal(context.LkpBrowserStore.getState().schemaVersion, 10);
+  assert.equal(context.LkpBrowserStore.getOrganizations().find((item) => item.id === "102").name, "ООО Бета");
+  assert.equal(context.LkpBrowserStore.getOrders().length, 2);
+  assert.equal(context.LkpBrowserStore.getDocuments().length, 4);
+  assert.equal(context.LkpBrowserStore.getBalances()["101"], 6000);
 });

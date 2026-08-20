@@ -18,6 +18,9 @@ const viteConfig = await readFile(new URL("../vite.config.ts", import.meta.url),
 const homePage = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 const adminPage = await readFile(new URL("../app/admin/page.tsx", import.meta.url), "utf8");
 const rootLayout = await readFile(new URL("../app/layout.tsx", import.meta.url), "utf8");
+const accountingPanel = await readFile(new URL("../app/accounting-panel.tsx", import.meta.url), "utf8");
+const oneCPgPage = await readFile(new URL("../app/1cpg/page.tsx", import.meta.url), "utf8");
+const oneCRrPage = await readFile(new URL("../app/1crr/page.tsx", import.meta.url), "utf8");
 const source = `${html}\n${style}\n${demoScript}\n${storageScript}\n${businessScript}\n${dataScript}\n${script}`;
 
 test("keeps the main LKP prototype script syntactically valid", () => {
@@ -61,13 +64,15 @@ test("keeps the current catalog, activation and navigation labels", () => {
   assert.doesNotMatch(html, /href="\/admin"/);
 });
 
-test("keeps invoices, permanent-partner prices and paid activation order status synchronized", () => {
+test("keeps invoices, permanent-partner prices and activation accounting synchronized", () => {
   assert.match(source, /<th>№ счета<\/th>/);
   assert.match(source, /details\?\.invoice \|\| \(licenseOrder \? "ПГ-362" : o\[1\]\)/);
   assert.match(source, /type: "Активация лицензий"/);
   assert.match(source, /status: "Отгружен", paymentStatus: "Оплачено"/);
-  assert.match(dataScript, /const payment = status === "Ошибка" \? "—" : "Оплачено"/);
-  assert.match(dataScript, /browserStore\.updateActivation\(activationNumber, \{ orderNumber, status: "Выполнена", paymentStatus: "Оплачено" \}\)/);
+  assert.match(dataScript, /browserBusiness\.createActivation/);
+  assert.match(dataScript, /browserBusiness\.completeActivation\(activationNumber\)/);
+  assert.match(businessScript, /ensureInvoiceInState\(state, order\)/);
+  assert.match(businessScript, /ensureUpdInState\(state, order, now\)/);
   assert.match(source, /rrpCents: 3000000, partnerPriceCents: 2500000, priceCents: 2300000/);
   assert.match(source, /pricePopover\(p\)/);
   assert.match(source, /class="catalog-price">Ваша цена<\/th><th class="catalog-quantity">Количество/);
@@ -100,7 +105,7 @@ test("connects the existing LKP screens to the shared browser order flow", () =>
   assert.match(source, /visibleOrderRows/);
   assert.match(source, /visibleActivations/);
   assert.match(source, /organizationAccessLoaded/);
-  assert.match(source, /schemaVersion: 5/);
+  assert.match(source, /schemaVersion: 10/);
   assert.match(source, /lkp-digital-copy-state/);
   assert.match(source, /ordersLoadError/);
   assert.match(source, /orderDetailsError/);
@@ -127,7 +132,8 @@ test("loads persistent contacts, shows the full catalog and splits checkout by o
   assert.match(source, /refreshContacts\(\)/);
   assert.match(source, /syncBrowserData\(\)/);
   assert.match(source, /const key = `\$\{organization\.id\}\|\$\{product\.vendor\}`/);
-  assert.match(source, /store\.saveCheckout\(cartRecord, orders\)/);
+  assert.match(businessScript, /state\.carts\.unshift\(cartRecord\)/);
+  assert.match(businessScript, /state\.orders\.unshift\(\.\.\.orders\)/);
   assert.match(source, /replaceStoredOrders\(browserStore\.getOrders\(\)\)/);
   assert.match(source, /visibleOrderRows = rows => rows\.filter\(order => storedOrderNumbers\.has\(order\[0\]\)\)/);
   assert.match(source, /storedOrders\.forEach\(upsertStoredOrder\)/);
@@ -138,12 +144,12 @@ test("loads persistent contacts, shows the full catalog and splits checkout by o
 });
 
 test("keeps activation orders in state.orders and links the LKP list and card explicitly", () => {
-  assert.match(demoScript, /number: "12540"[^\n]+type: "Активация лицензий", activationNumber: "123"/);
+  assert.match(demoScript, /number: "12540"[\s\S]+?type: "Активация лицензий"[\s\S]+?activationNumber: "123"/);
   assert.match(demoScript, /id: "123", number: "123", orderNumber: "12540"/);
   assert.match(storageScript, /const demoActivationOrder = demo\.orders\.find\(order => order\.number === "12540"\)/);
   assert.match(storageScript, /state\.orders\.unshift\(linkedOrder\)/);
   assert.match(dataScript, /activationNumber: order\.activationNumber \|\| ""/);
-  assert.match(dataScript, /type: "Активация лицензий", activationNumber/);
+  assert.match(businessScript, /type: ACTIVATION_ORDER, activationNumber: activation\.number/);
   assert.match(script, /a\[0\] === details\?\.activationNumber \|\| a\[1\] === o\[0\]/);
   assert.match(adminPanel, /type: order\.type \|\| "Покупка товара"/);
   assert.doesNotMatch(source, /licenseOrders\s*=/);
@@ -154,10 +160,10 @@ test("keeps status history out of the partner order card", () => {
   assert.doesNotMatch(script, /changedByEmail/);
 });
 
-test("admin data section keeps all 16 tiles in fixed order with an adaptive grid", () => {
+test("admin data section keeps business tiles in fixed order without an events journal", () => {
   const titles = [
     "Партнёры", "Контрагенты", "Заказы", "Список продукции", "Виды цен", "Статусы партнёров", "Вендоры", "Условия поставки",
-    "Типы договоров", "Договоры", "Категории", "Товарные группы", "Статусы заказов", "Модели", "Лицензии", "События",
+    "Типы договоров", "Договоры", "Категории", "Товарные группы", "Статусы заказов", "Модели", "Лицензии",
   ];
   let cursor = -1;
   titles.forEach((title) => {
@@ -166,19 +172,23 @@ test("admin data section keeps all 16 tiles in fixed order with an adaptive grid
     cursor = next;
   });
   assert.match(adminPanel, /grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8/);
+  assert.doesNotMatch(adminPanel, /title: "События"/);
 });
 
 test("references, contracts, balances and advance orders use the shared browser state", () => {
-  assert.match(demoScript, /contracts: \[/);
+  assert.match(demoScript, /const contracts = \[/);
+  assert.match(demoScript, /balances: \[\{/);
+  assert.match(demoScript, /documents: \[/);
   assert.match(demoScript, /references: \{/);
   assert.match(storageScript, /migrations\[3\] = state =>/);
   assert.match(storageScript, /getReferenceItems, createReferenceItem, updateReferenceItem/);
   assert.match(referencePanel, /window\.LkpBrowserStore\.getReferenceItems\(kind\)/);
   assert.match(referencePanel, /window\.LkpBrowserStore\.subscribe\(load\)/);
   assert.match(dataScript, /browserStore\.getContracts\(\)/);
-  assert.match(businessScript, /contractId: contract\?\.id \|\| ""/);
+  assert.match(businessScript, /function activeContract/);
+  assert.match(businessScript, /function createAdvanceOrder/);
   assert.match(dataScript, /browserStore\.getBalances\(\)/);
-  assert.match(dataScript, /browserStore\.updateBalance/);
+  assert.doesNotMatch(dataScript, /browserStore\.updateBalance/);
   assert.match(demoScript, /number: "12480"[^\n]+type: "Авансовый платеж"/);
 });
 
@@ -197,4 +207,35 @@ test("LKP and Admin licenses use the same browser storage and centralized reset 
   assert.doesNotMatch(licensesPanel, /fetch\(/);
   assert.doesNotMatch(licensesPanel, /\/api\/admin\/activations/);
   assert.match(storageScript, /write\(demoState\(\), "reset"\)/);
+});
+
+test("cart UI uses shared quantity and removal operations with the required confirmation", () => {
+  assert.match(dataScript, /data-cart-minus/);
+  assert.match(dataScript, /data-cart-plus/);
+  assert.match(dataScript, /data-cart-input/);
+  assert.match(dataScript, /data-cart-remove-item/);
+  assert.match(dataScript, /<div class="page-title">Подтвердите<\/div><div class="notice">Удалить товар из корзины\?<\/div>/);
+  assert.match(script, /browserBusiness\.setCartQuantity/);
+  assert.match(script, /browserBusiness\.removeCartItem/);
+});
+
+test("keeps offer versions, PDF downloads and uniform boolean flags in the shared UI", () => {
+  assert.match(businessScript, /function getOfferStatus/);
+  assert.match(businessScript, /function acceptOffer/);
+  assert.match(businessScript, /application\/pdf/);
+  assert.match(script, /browserBusiness\.acceptOffer/);
+  assert.match(dataScript, /boolean-flag/);
+  assert.match(accountingPanel, /<BooleanFlag/);
+  assert.match(adminPanel, /document\.type === "УПД"/);
+});
+
+test("exports both accounting routes and keeps their operations in the shared business layer", () => {
+  assert.match(oneCPgPage, /<AccountingPanel system="PG" \/>/);
+  assert.match(oneCRrPage, /<AccountingPanel system="RR" \/>/);
+  assert.match(accountingPanel, /getAccountingOrders\(system\)/);
+  assert.match(accountingPanel, /LkpBusiness\.processPayment/);
+  assert.match(accountingPanel, /LkpBusiness\.postUpd/);
+  assert.match(accountingPanel, /Провести поступление денег/);
+  assert.match(accountingPanel, /Провести УПД/);
+  assert.match(accountingPanel, /NEXT_PUBLIC_BASE_PATH/);
 });
