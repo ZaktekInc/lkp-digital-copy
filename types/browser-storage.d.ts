@@ -10,10 +10,29 @@ type BrowserLicenseKey = { id: string; serialNumber: string; licenseKey: string;
 type BrowserActivationItem = { id: string; model: string; licenseType: string; subscriptionEnd: string; priceCents: number; licenseKeys: BrowserLicenseKey[] };
 type BrowserActivation = { id: string; number: string; orderNumber: string; organizationId: string; status: string; vendor: string; totalCents: number; paymentStatus: string; orderedAt: string; comment: string; simulator: string; items: BrowserActivationItem[] };
 type RemovalResult = { deleted: boolean; archived: boolean };
+type BrowserUser = { id: string; partnerId: string; name: string; email: string; phone: string; position: string; isAdmin: boolean; locked: boolean; deleted: boolean; password: string; sessionVersion: number; createdAt: string; updatedAt: string; lastActivityAt: string };
 
 interface Window {
   LkpBrowserStore: {
     getState(): { schemaVersion: number; offerAcceptances?: Record<string, string>; nextIds?: Record<string, number> };
+    getUsers(options?: { partnerId?: string; includeDeleted?: boolean }): BrowserUser[];
+    getUser(id: string): BrowserUser | null;
+    login(email: string, password: string): BrowserUser;
+    logout(): void;
+    getCurrentUser(): BrowserUser | null;
+    updateOwnUser(input: Partial<BrowserUser>): BrowserUser;
+    changeOwnPassword(currentPassword: string, newPassword: string): BrowserUser;
+    createManager(input: Partial<BrowserUser>): BrowserUser;
+    updateManager(id: string, input: Partial<BrowserUser>): BrowserUser;
+    setManagerLocked(id: string, locked: boolean): BrowserUser;
+    activateManager(id: string): BrowserUser;
+    deleteManager(id: string): BrowserUser;
+    adminCreateManager(input: Partial<BrowserUser>): BrowserUser;
+    adminUpdateUser(id: string, input: Partial<BrowserUser>): BrowserUser;
+    adminSetManagerLocked(id: string, locked: boolean): BrowserUser;
+    adminActivateManager(id: string): BrowserUser;
+    adminDeleteManager(id: string): BrowserUser;
+    transferOwnership(partnerId: string, nextOwnerId: string): { previousOwner: BrowserUser; owner: BrowserUser };
     getOrganizations(options?: { includeInactive?: boolean }): BrowserOrganization[];
     createOrganization(input: Partial<BrowserOrganization>): BrowserOrganization;
     updateOrganization(id: string, input: Partial<BrowserOrganization>): BrowserOrganization;

@@ -19,10 +19,14 @@
   const activationAgreement = contracts[2].name;
 
   global.LkpDemoData = {
-    schemaVersion: 10,
+    schemaVersion: 11,
     activationDrafts: {},
-    nextIds: { organization: 103, contact: 203, cart: 653, order: 1001, activation: 125, reference: 1000, document: 1000, invoicePg: 100, invoiceRr: 100, updPg: 100, updRr: 100 },
+    nextIds: { organization: 103, contact: 203, user: 3, cart: 653, order: 1001, activation: 125, reference: 1000, document: 1000, invoicePg: 100, invoiceRr: 100, updPg: 100, updRr: 100 },
     partner: { id: "1", name: "ООО «Партнер»", status: "Постоянный партнер" },
+    users: [
+      { id: "1", partnerId: "1", name: "Иван Петров", email: "owner@demo.aqsi.ru", phone: "+7 900 100-00-01", position: "Владелец компании", isAdmin: true, locked: false, deleted: false, password: "Owner123!", sessionVersion: 1, createdAt: "2026-08-01T00:00:00.000Z", updatedAt: "2026-08-01T00:00:00.000Z", lastActivityAt: "2026-08-01T00:00:00.000Z" },
+      { id: "2", partnerId: "1", name: "Мария Соколова", email: "manager@demo.aqsi.ru", phone: "+7 900 100-00-02", position: "Менеджер", isAdmin: false, locked: false, deleted: false, password: "Manager123!", sessionVersion: 1, createdAt: "2026-08-01T00:00:00.000Z", updatedAt: "2026-08-01T00:00:00.000Z", lastActivityAt: "2026-08-01T00:00:00.000Z" }
+    ],
     organizations: [
       { id: "101", publicId: "101", name: organizationA, inn: "7724827983", city: "Санкт-Петербург", phone: "+7 800 555-35-36", email: "example1@mail.ru", isActive: true },
       { id: "102", publicId: "102", name: "ООО Бета", inn: "7812345678", city: "Санкт-Петербург", phone: "+7 812 000-00-02", email: "info@beta.example", isActive: true }

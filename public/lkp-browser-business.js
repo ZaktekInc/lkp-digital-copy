@@ -353,12 +353,27 @@
       activation.paymentStatus = prepaid ? PAID : UNPAID;
       let order = existingOrder;
       if (!order) {
+        const orderItems = [];
+        const orderItemsByNomenclature = new Map();
+        activation.items.forEach(item => {
+          const unitPriceCents = Number(item.priceCents || 0);
+          const nomenclatureKey = JSON.stringify([item.licenseType, item.model, unitPriceCents]);
+          const existingItem = orderItemsByNomenclature.get(nomenclatureKey);
+          if (existingItem) {
+            existingItem.quantity += 1;
+            existingItem.lineTotalCents += unitPriceCents;
+            return;
+          }
+          const orderItem = { code: `LICENSE-${orderItems.length + 1}`, name: `${item.licenseType} — ${item.model}`, vendor: activation.vendor, quantity: 1, unitPriceCents, lineTotalCents: unitPriceCents };
+          orderItems.push(orderItem);
+          orderItemsByNomenclature.set(nomenclatureKey, orderItem);
+        });
         order = {
           number: nextId(state, "order"), cartNumber: "", organizationId: activation.organizationId, vendor: activation.vendor, type: ACTIVATION_ORDER, activationNumber: activation.number,
           accountingSystem: "PG", contractId: contract.id, status: "Принят", paymentStatus: prepaid ? PAID : UNPAID, invoiceNumber: "", invoiceDocumentId: "", updDocumentId: "", documentIds: [],
           agreement: contract.name, deliveryTerms: contract.paymentTerms, contactName: "Иванов Иван Иванович", contactPhone: "+7 987 654 32 10", contactEmail: "example@mail.ru",
           comment: `Активация № ${activation.number}`, createdAt: now, totalCents: activation.totalCents,
-          items: activation.items.map((item, index) => ({ code: `LICENSE-${index + 1}`, name: `${item.licenseType} — ${item.model}`, vendor: activation.vendor, quantity: 1, unitPriceCents: item.priceCents, lineTotalCents: item.priceCents })),
+          items: orderItems,
           history: [{ fromStatus: null, toStatus: "Принят", changedAt: now, changedBy: "ЛКП" }]
         };
         if (prepaid) order.paymentProcessedAt = now;

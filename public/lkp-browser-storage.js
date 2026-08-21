@@ -2,7 +2,8 @@
   "use strict";
 
   const STORAGE_KEY = "lkp-digital-copy-state";
-  const SCHEMA_VERSION = 10;
+  const SCHEMA_VERSION = 11;
+  const SESSION_KEY = "lkp-digital-copy-session";
   const migrations = {};
   const invoiceSequences = {
     "Пи Джи Групп": { key: "invoicePg", prefix: "ПГ" },
@@ -239,6 +240,14 @@
     return state;
   };
 
+  migrations[10] = state => {
+    const demo = demoState();
+    state.schemaVersion = 11;
+    state.nextIds = { ...demo.nextIds, ...(state.nextIds || {}) };
+    state.users = Array.isArray(state.users) ? state.users : clone(demo.users);
+    return state;
+  };
+
   function notify(reason = "change") {
     const change = { reason, storageKey: STORAGE_KEY };
     subscribers.forEach(listener => listener(change));
@@ -281,6 +290,101 @@
     const text = String(value || "").trim();
     if (!text) throw new Error(`Заполните поле «${label}»`);
     return text;
+  }
+
+  const normalizeEmail = value => requiredText(value, "Email").toLowerCase();
+  const nowAfter = value => new Date(Math.max(Date.now(), (Date.parse(value || "") || 0) + 1)).toISOString();
+  function activeUserByEmail(state, email, exceptId = "") {
+    const normalized = normalizeEmail(email);
+    return (state.users || []).find(user => !user.deleted && user.id !== exceptId && String(user.email).toLowerCase() === normalized);
+  }
+  function requireUser(state, id) {
+    const user = (state.users || []).find(item => item.id === id);
+    if (!user || user.deleted) throw new Error("Пользователь недоступен");
+    return user;
+  }
+  function requireOwner(state, id) {
+    const user = requireUser(state, id);
+    if (!user.isAdmin) throw new Error("Нет доступа");
+    return user;
+  }
+  function requireAdminContext() {
+    if (!/(^|\/)admin(?:\/|\/index\.html)?$/.test(global.location?.pathname || "")) throw new Error("Нет доступа");
+  }
+  function invalidate(user) { user.sessionVersion = Math.max(1, Number(user.sessionVersion) || 1) + 1; }
+  function generatedPassword(user) { return `Demo${String(user.id).padStart(3, "0")}!${String(Date.now()).slice(-4)}`; }
+  const getUsers = options => clone((read().users || []).filter(user => (!options?.partnerId || user.partnerId === options.partnerId) && (options?.includeDeleted || !user.deleted)));
+  const getUser = id => clone((read().users || []).find(user => user.id === id) || null);
+  function authenticate(email, password) {
+    return update(state => {
+      const user = activeUserByEmail(state, email);
+      if (!user || user.password !== String(password || "")) throw new Error("Неверный Email или пароль");
+      user.lastActivityAt = new Date().toISOString();
+      return user;
+    }, "user-auth");
+  }
+  function setCurrentSession(user) {
+    if (!global.sessionStorage) return;
+    global.sessionStorage.setItem(SESSION_KEY, JSON.stringify({ userId: user.id, partnerId: user.partnerId, sessionVersion: user.sessionVersion }));
+  }
+  function getCurrentUser() {
+    if (!global.sessionStorage) return null;
+    try {
+      const session = JSON.parse(global.sessionStorage.getItem(SESSION_KEY) || "null");
+      const user = session && (read().users || []).find(item => item.id === session.userId);
+      if (!user || user.partnerId !== session.partnerId || user.deleted || user.sessionVersion !== session.sessionVersion) { global.sessionStorage.removeItem(SESSION_KEY); return null; }
+      return clone(user);
+    } catch { global.sessionStorage.removeItem(SESSION_KEY); return null; }
+  }
+  function logout() { if (global.sessionStorage) global.sessionStorage.removeItem(SESSION_KEY); }
+  function login(email, password) { const user = authenticate(email, password); setCurrentSession(user); return user; }
+  function updateOwnUser(actorId, input) {
+    return update(state => { const user = requireUser(state, actorId); user.name = requiredText(input.name, "ФИО"); user.phone = String(input.phone || "").trim(); user.position = requiredText(input.position, "Должность"); user.updatedAt = nowAfter(user.updatedAt); return user; }, "user");
+  }
+  function changeOwnPassword(actorId, currentPassword, newPassword) {
+    const user = update(state => { const item = requireUser(state, actorId); if (item.password !== String(currentPassword || "")) throw new Error("Неверный текущий пароль"); item.password = requiredText(newPassword, "Новый пароль"); invalidate(item); item.updatedAt = nowAfter(item.updatedAt); return item; }, "user-password");
+    setCurrentSession(user);
+    return user;
+  }
+  function createManager(input, actorId = "", admin = false) {
+    return update(state => {
+      const actor = admin ? null : requireOwner(state, actorId);
+      const partnerId = admin ? requiredText(input.partnerId || state.partner.id, "Партнёр") : actor.partnerId;
+      const email = normalizeEmail(input.email);
+      if (activeUserByEmail(state, email)) throw new Error("Пользователь с таким Email уже существует");
+      const timestamp = new Date().toISOString();
+      const user = { id: nextId(state, "user"), partnerId, name: requiredText(input.name, "ФИО"), email, phone: String(input.phone || "").trim(), position: requiredText(input.position, "Должность"), isAdmin: false, locked: false, deleted: false, password: "", sessionVersion: 1, createdAt: timestamp, updatedAt: timestamp, lastActivityAt: "" };
+      user.password = generatedPassword(user);
+      state.users ||= []; state.users.push(user); return user;
+    }, "user");
+  }
+  function updateManager(id, input, actorId = "", admin = false) {
+    return update(state => {
+      const actor = admin ? null : requireOwner(state, actorId); const user = requireUser(state, id);
+      if (!admin && (user.partnerId !== actor.partnerId || (user.isAdmin && user.id !== actor.id))) throw new Error("Нет доступа");
+      if (admin && input.email !== undefined) { const email = normalizeEmail(input.email); if (activeUserByEmail(state, email, id)) throw new Error("Пользователь с таким Email уже существует"); user.email = email; }
+      if (admin && input.isAdmin !== undefined) {
+        const nextIsAdmin = Boolean(input.isAdmin);
+        if (!nextIsAdmin && user.isAdmin) throw new Error("Смените Владельца, назначив Администратором другого пользователя");
+        if (nextIsAdmin && !user.isAdmin) {
+          (state.users || []).filter(item => item.partnerId === user.partnerId && !item.deleted && item.isAdmin).forEach(owner => { owner.isAdmin = false; owner.updatedAt = nowAfter(owner.updatedAt); });
+          user.isAdmin = true;
+        }
+      }
+      user.name = requiredText(input.name, "ФИО"); user.phone = String(input.phone || "").trim(); user.position = requiredText(input.position, "Должность"); user.updatedAt = nowAfter(user.updatedAt); return user;
+    }, "user");
+  }
+  function setManagerLocked(id, locked, actorId = "", admin = false) {
+    return update(state => { const actor = admin ? null : requireOwner(state, actorId); const user = requireUser(state, id); if (user.isAdmin || (!admin && user.partnerId !== actor.partnerId)) throw new Error("Нет доступа"); user.locked = Boolean(locked); if (locked) invalidate(user); user.updatedAt = nowAfter(user.updatedAt); return user; }, "user");
+  }
+  function activateManager(id, actorId = "", admin = false) {
+    return update(state => { const actor = admin ? null : requireOwner(state, actorId); const user = requireUser(state, id); if (user.isAdmin || (!admin && user.partnerId !== actor.partnerId)) throw new Error("Нет доступа"); user.locked = false; user.password = generatedPassword(user); invalidate(user); user.updatedAt = nowAfter(user.updatedAt); return user; }, "user");
+  }
+  function deleteManager(id, actorId = "", admin = false) {
+    return update(state => { const actor = admin ? null : requireOwner(state, actorId); const user = requireUser(state, id); if (user.isAdmin || (!admin && user.partnerId !== actor.partnerId)) throw new Error("Нет доступа"); user.deleted = true; user.email = `user-${user.id}@deleted`; user.locked = true; invalidate(user); user.updatedAt = nowAfter(user.updatedAt); return user; }, "user");
+  }
+  function transferOwnership(partnerId, nextOwnerId) {
+    return update(state => { const users = (state.users || []).filter(user => user.partnerId === partnerId && !user.deleted); const current = users.find(user => user.isAdmin); const next = users.find(user => user.id === nextOwnerId && !user.isAdmin); if (!current || !next) throw new Error("Выберите Менеджера"); current.isAdmin = false; next.isAdmin = true; current.updatedAt = nowAfter(current.updatedAt); next.updatedAt = nowAfter(next.updatedAt); return { previousOwner: current, owner: next }; }, "user");
   }
 
   const getOrganizations = options => clone(read().organizations.filter(item => options?.includeInactive || item.isActive));
@@ -328,8 +432,8 @@
   function removeOrganization(id) {
     return update(state => { const item = state.organizations.find(row => row.id === id); if (!item) throw new Error("Организация не найдена"); const used = state.orders.some(order => order.organizationId === id) || state.draftCart.some(row => row.organizationId === id); if (used) { item.isActive = false; return { deleted: false, archived: true }; } state.organizations = state.organizations.filter(row => row.id !== id); state.products.forEach(product => { product.availableOrganizationIds = product.availableOrganizationIds.filter(value => value !== id); }); return { deleted: true, archived: false }; });
   }
-  function createContact(input) {
-    return update(state => { const item = { id: nextId(state, "contact"), department: requiredText(input.department, "Отдел"), position: requiredText(input.position, "Должность"), fullName: requiredText(input.fullName, "ФИО"), phone: requiredText(input.phone, "Телефон"), email: requiredText(input.email, "E-mail"), isActive: true }; state.contacts.push(item); return item; });
+  function createContact(input, actorId = "") {
+    return update(state => { requireOwner(state, actorId); const item = { id: nextId(state, "contact"), department: requiredText(input.department, "Отдел"), position: requiredText(input.position, "Должность"), fullName: requiredText(input.fullName, "ФИО"), phone: requiredText(input.phone, "Телефон"), email: requiredText(input.email, "E-mail"), isActive: true }; state.contacts.push(item); return item; });
   }
   function createProduct(input) {
     return update(state => { const code = requiredText(input.code, "Код"); if (state.products.some(item => item.code === code)) throw new Error("Товар с таким кодом уже существует"); const item = { code, name: requiredText(input.name, "Название"), groupName: requiredText(input.groupName, "Товарная группа"), vendor: requiredText(input.vendor, "Вендор"), rrpCents: Number(input.rrpCents) || 0, partnerPriceCents: Number(input.partnerPriceCents) || 0, priceCents: Number(input.priceCents) || 0, availableOrganizationIds: [...(input.availableOrganizationIds || [])], isActive: input.isActive !== false }; state.products.push(item); return item; });
@@ -364,8 +468,12 @@
   if (typeof global.addEventListener === "function") global.addEventListener("storage", event => { if (event.key === STORAGE_KEY) notify("external"); });
 
   global.LkpBrowserStore = {
-    STORAGE_KEY, SCHEMA_VERSION, getState: () => clone(read()), transaction: (mutator, reason) => update(mutator, reason || "business"),
-    getOrganizations, createOrganization, updateOrganization, removeOrganization, getContacts, createContact,
+    STORAGE_KEY, SESSION_KEY, SCHEMA_VERSION, getState: () => clone(read()), transaction: (mutator, reason) => update(mutator, reason || "business"),
+    getUsers, getUser, login, logout, getCurrentUser,
+    updateOwnUser: input => updateOwnUser(getCurrentUser()?.id || "", input), changeOwnPassword: (currentPassword, newPassword) => changeOwnPassword(getCurrentUser()?.id || "", currentPassword, newPassword),
+    createManager: input => createManager(input, getCurrentUser()?.id || "", false), updateManager: (id, input) => updateManager(id, input, getCurrentUser()?.id || "", false), setManagerLocked: (id, locked) => setManagerLocked(id, locked, getCurrentUser()?.id || "", false), activateManager: id => activateManager(id, getCurrentUser()?.id || "", false), deleteManager: id => deleteManager(id, getCurrentUser()?.id || "", false),
+    adminCreateManager: input => { requireAdminContext(); return createManager(input, "", true); }, adminUpdateUser: (id, input) => { requireAdminContext(); return updateManager(id, input, "", true); }, adminSetManagerLocked: (id, locked) => { requireAdminContext(); return setManagerLocked(id, locked, "", true); }, adminActivateManager: id => { requireAdminContext(); return activateManager(id, "", true); }, adminDeleteManager: id => { requireAdminContext(); return deleteManager(id, "", true); }, transferOwnership: (partnerId, nextOwnerId) => { requireAdminContext(); return transferOwnership(partnerId, nextOwnerId); },
+    getOrganizations, createOrganization, updateOrganization, removeOrganization, getContacts, createContact: input => createContact(input, getCurrentUser()?.id || ""),
     getProducts, createProduct, updateProduct, removeProduct, getCart, saveCart, getCarts, getOrders, getOrder,
     reserveNumbers, reserveInvoiceNumbers, saveCheckout, createOrder, updateOrder, getLicenses, getActivations, getActivation, createActivation, updateActivation, updateLicense,
     getBalances, getBalanceRecords, updateBalance, getActivationDraft, saveActivationDraft, clearActivationDraft, getContracts, getDocuments, getDocument, getOrderDocuments,

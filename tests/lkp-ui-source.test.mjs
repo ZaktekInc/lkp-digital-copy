@@ -105,7 +105,7 @@ test("connects the existing LKP screens to the shared browser order flow", () =>
   assert.match(source, /visibleOrderRows/);
   assert.match(source, /visibleActivations/);
   assert.match(source, /organizationAccessLoaded/);
-  assert.match(source, /schemaVersion: 10/);
+  assert.match(source, /schemaVersion: 11/);
   assert.match(source, /lkp-digital-copy-state/);
   assert.match(source, /ordersLoadError/);
   assert.match(source, /orderDetailsError/);

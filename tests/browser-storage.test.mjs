@@ -11,8 +11,8 @@ function memoryStorage() {
   return { getItem: (key) => values.has(key) ? values.get(key) : null, setItem: (key, value) => values.set(key, String(value)), removeItem: (key) => values.delete(key) };
 }
 
-function browserContext(localStorage = memoryStorage()) {
-  const context = vm.createContext({ localStorage, console });
+function browserContext(localStorage = memoryStorage(), sessionStorage = memoryStorage(), pathname = "/") {
+  const context = vm.createContext({ localStorage, sessionStorage, location: { pathname }, console });
   context.window = context;
   context.globalThis = context;
   scripts.forEach((source) => vm.runInContext(source, context));
@@ -46,7 +46,7 @@ test("schema version 5 migrates to rich contracts, documents and contract balanc
   const context = browserContext(localStorage);
   const migrated = context.LkpBrowserStore.getState();
   const order = context.LkpBrowserStore.getOrder("77777");
-  assert.equal(migrated.schemaVersion, 10);
+  assert.equal(migrated.schemaVersion, 11);
   assert.ok(context.LkpBrowserStore.getContracts().some((item) => item.id === "contract-101-supply-pg"));
   assert.equal(context.LkpBrowserStore.getBalanceRecords()[0].amountCents, 777700);
   assert.equal(order.status, "Ожидание сборки");
@@ -69,10 +69,53 @@ test("schema version 6 adds offer acceptances, PDF names and the current Beta ca
 
   const context = browserContext(localStorage);
   const migrated = context.LkpBrowserStore.getState();
-  assert.equal(migrated.schemaVersion, 10);
+  assert.equal(migrated.schemaVersion, 11);
   assert.equal(JSON.stringify(migrated.offerAcceptances), "{}");
   assert.equal(context.LkpBrowserStore.getProducts().find((item) => item.code === "RR-01F").availableOrganizationIds.includes("102"), false);
   assert.match(context.LkpBrowserStore.getDocuments().find((item) => item.type === "Счёт на оплату").filename, /\.pdf$/);
+});
+
+test("schema version 10 adds canonical users without replacing existing business data", () => {
+  const localStorage = memoryStorage();
+  const seed = browserContext();
+  const oldState = JSON.parse(JSON.stringify(seed.LkpDemoData));
+  oldState.schemaVersion = 10;
+  delete oldState.users;
+  delete oldState.nextIds.user;
+  oldState.organizations[0].name = "Пользовательская организация";
+  localStorage.setItem("lkp-digital-copy-state", JSON.stringify(oldState));
+
+  const context = browserContext(localStorage);
+  const migrated = context.LkpBrowserStore.getState();
+  assert.equal(migrated.schemaVersion, 11);
+  assert.equal(migrated.organizations[0].name, "Пользовательская организация");
+  assert.equal(context.LkpBrowserStore.getUsers().filter((user) => user.isAdmin).length, 1);
+  assert.equal(migrated.nextIds.user, 3);
+});
+
+test("role policy ignores legacy locked and uses soft delete to end access", () => {
+  const localStorage = memoryStorage();
+  const seed = browserContext();
+  const oldState = JSON.parse(JSON.stringify(seed.LkpDemoData));
+  oldState.schemaVersion = 10;
+  oldState.users.find((user) => user.id === "2").locked = true;
+  localStorage.setItem("lkp-digital-copy-state", JSON.stringify(oldState));
+
+  const legacyManagerContext = browserContext(localStorage);
+  assert.equal(legacyManagerContext.LkpBrowserStore.login("manager@demo.aqsi.ru", "Manager123!").id, "2");
+
+  const context = browserContext(localStorage);
+  const owner = context.LkpBrowserStore.login("OWNER@DEMO.AQSI.RU", "Owner123!");
+  assert.equal(owner.isAdmin, true);
+  assert.equal(context.LkpBrowserStore.getCurrentUser().id, owner.id);
+  const manager = context.LkpBrowserStore.createManager({ name: "Новый Менеджер", email: "new-manager@example.test", phone: "", position: "Менеджер" });
+  assert.match(manager.password, /^Demo/);
+
+  const managerContext = browserContext(localStorage);
+  managerContext.LkpBrowserStore.login(manager.email, manager.password);
+  context.LkpBrowserStore.deleteManager(manager.id);
+  assert.equal(managerContext.LkpBrowserStore.getCurrentUser(), null);
+  assert.throws(() => context.LkpBrowserStore.login(manager.email, manager.password), /Неверный Email или пароль/);
 });
 
 test("checkout creates one cart and one strictly contracted order per organization and vendor", () => {
@@ -198,6 +241,23 @@ test("prepaid activation debits balance once and creates one paid shipped accoun
   assert.equal(context.LkpBrowserStore.getOrderDocuments(order.number).filter((item) => item.type === "УПД").length, 1);
 });
 
+test("activation order aggregates equal nomenclature by license type, model and unit price", () => {
+  const context = browserContext();
+  const items = [
+    ...oneLicense(100000),
+    { ...oneLicense(100000)[0], serialNumber: "2345678901234567" },
+    { ...oneLicense(200000)[0], serialNumber: "3456789012345678" }
+  ];
+  const activation = context.LkpBusiness.createActivation({ organizationId: "101", items });
+  context.LkpBusiness.completeActivation(activation.number);
+  const completed = context.LkpBrowserStore.getActivation(activation.number);
+  const order = context.LkpBrowserStore.getOrder(completed.orderNumber);
+  assert.equal(order.items.length, 2);
+  assert.equal(order.items.find((item) => item.unitPriceCents === 100000).quantity, 2);
+  assert.equal(order.items.find((item) => item.unitPriceCents === 100000).lineTotalCents, 200000);
+  assert.equal(order.items.find((item) => item.unitPriceCents === 200000).quantity, 1);
+});
+
 test("postpaid activation never uses balance and later payment updates both order and activation", () => {
   const context = browserContext();
   const before = context.LkpBrowserStore.getBalanceRecords().filter((item) => item.organizationId === "102");
@@ -272,12 +332,12 @@ test("accounting routing excludes advances and licenses from RR", () => {
   assert.ok(rrOrders.every((order) => order.type === "Покупка товара" && order.vendor === "РР-Электро"));
 });
 
-test("reset restores the complete canonical v10 state", () => {
+test("reset restores the complete canonical v11 state", () => {
   const context = browserContext();
   context.LkpBrowserStore.updateOrganization("102", { name: "ООО Альфа" });
   context.LkpBusiness.checkout(checkoutInput);
   context.LkpBrowserStore.resetDemoData();
-  assert.equal(context.LkpBrowserStore.getState().schemaVersion, 10);
+  assert.equal(context.LkpBrowserStore.getState().schemaVersion, 11);
   assert.equal(context.LkpBrowserStore.getOrganizations().find((item) => item.id === "102").name, "ООО Бета");
   assert.equal(context.LkpBrowserStore.getOrders().length, 2);
   assert.equal(context.LkpBrowserStore.getDocuments().length, 4);

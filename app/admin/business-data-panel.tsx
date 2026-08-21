@@ -61,6 +61,7 @@ function organizationPayload(values: FormData) {
 export default function BusinessDataPanel({ entity, title }: { entity: Entity; title: string }) {
   const [items, setItems] = useState<BusinessItem[]>([]);
   const [selected, setSelected] = useState<BusinessItem | null>(null);
+  const [creating, setCreating] = useState(false);
   const [organizations, setOrganizations] = useState<BrowserOrganization[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -109,7 +110,7 @@ export default function BusinessDataPanel({ entity, title }: { entity: Entity; t
         if (mode === "create") window.LkpBrowserStore.createProduct(body as BrowserProduct);
         else window.LkpBrowserStore.updateProduct((selected as ProductItem).code, body as Partial<BrowserProduct>);
       }
-      if (mode === "create") form.reset();
+      if (mode === "create") { form.reset(); setCreating(false); }
       setNotice(mode === "create" ? "Запись создана." : "Изменения сохранены.");
       load();
     } catch (requestError) {
@@ -142,17 +143,17 @@ export default function BusinessDataPanel({ entity, title }: { entity: Entity; t
 
   return (
     <section className="rounded-xl border border-[#dce3ec] bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm text-[#65758b]">Общие данные browser storage</p><h2 className="text-xl font-bold">{title}</h2></div><button type="button" onClick={load} className="rounded-lg border border-[#b8c7da] px-4 py-2 text-sm font-semibold">Обновить</button></div>
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm text-[#65758b]">Общие данные browser storage</p><h2 className="text-xl font-bold">{title}</h2></div><div className="flex gap-2"><button type="button" onClick={load} className="rounded-lg border border-[#b8c7da] px-4 py-2 text-sm font-semibold">Обновить</button><button type="button" onClick={() => { setCreating(true); setSelected(null); }} className="rounded-lg bg-[#1769c2] px-4 py-2 text-sm font-semibold text-white">Добавить</button></div></div>
       {error && <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-red-800" role="alert">{error}</div>}
       {notice && <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-blue-900" role="status">{notice}</div>}
-      <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(340px,0.75fr)]">
+      <div className={`mt-5 grid gap-5 ${creating || selected ? "lg:grid-cols-[minmax(0,1.25fr)_minmax(340px,0.75fr)]" : ""}`}>
         <div className="overflow-x-auto rounded-lg border border-[#e5eaf1]">
-          {loading ? <p className="p-5 text-[#65758b]">Загрузка…</p> : items.length === 0 ? <p className="p-5 text-[#65758b]">Записей пока нет.</p> : <table className="w-full border-collapse text-left text-sm"><thead className="bg-[#f5f7fa] text-[#526176]"><tr>{isOrganizations && <th className="px-4 py-3">ID</th>}<th className="px-4 py-3">{isOrganizations ? "ИНН" : "Код"}</th><th className="px-4 py-3">Название</th><th className="px-4 py-3">{isOrganizations ? "Город" : "Вендор"}</th><th className="px-4 py-3">Статус</th></tr></thead><tbody>{items.map((item) => { const key = isOrganizations ? (item as OrganizationItem).id : (item as ProductItem).code; const selectedKey = selected ? (isOrganizations ? (selected as OrganizationItem).id : (selected as ProductItem).code) : ""; return <tr key={key} onClick={() => setSelected(item)} className={`cursor-pointer border-t border-[#edf0f4] hover:bg-[#f7faff] ${selectedKey === key ? "bg-[#edf5ff]" : ""}`}>{isOrganizations && <td className="px-4 py-3 font-semibold">{(item as OrganizationItem).publicId}</td>}<td className="px-4 py-3">{isOrganizations ? (item as OrganizationItem).inn : (item as ProductItem).code}</td><td className="px-4 py-3 font-semibold">{item.name}</td><td className="px-4 py-3">{isOrganizations ? (item as OrganizationItem).city : (item as ProductItem).vendor}</td><td className="px-4 py-3"><BooleanFlag value={item.isActive} label={item.isActive ? "Активна" : "Неактивна"} /></td></tr>; })}</tbody></table>}
+          {loading ? <p className="p-5 text-[#65758b]">Загрузка…</p> : items.length === 0 ? <p className="p-5 text-[#65758b]">Записей пока нет.</p> : <table className="w-full border-collapse text-left text-sm"><thead className="bg-[#f5f7fa] text-[#526176]"><tr>{isOrganizations && <th className="px-4 py-3">ID</th>}<th className="px-4 py-3">{isOrganizations ? "ИНН" : "Код"}</th><th className="px-4 py-3">Название</th><th className="px-4 py-3">{isOrganizations ? "Город" : "Вендор"}</th><th className="px-4 py-3">Статус</th></tr></thead><tbody>{items.map((item) => { const key = isOrganizations ? (item as OrganizationItem).id : (item as ProductItem).code; const selectedKey = selected ? (isOrganizations ? (selected as OrganizationItem).id : (selected as ProductItem).code) : ""; return <tr key={key} onClick={() => { setSelected(item); setCreating(false); }} className={`cursor-pointer border-t border-[#edf0f4] hover:bg-[#f7faff] ${selectedKey === key ? "bg-[#edf5ff]" : ""}`}>{isOrganizations && <td className="px-4 py-3 font-semibold">{(item as OrganizationItem).publicId}</td>}<td className="px-4 py-3">{isOrganizations ? (item as OrganizationItem).inn : (item as ProductItem).code}</td><td className="px-4 py-3 font-semibold">{item.name}</td><td className="px-4 py-3">{isOrganizations ? (item as OrganizationItem).city : (item as ProductItem).vendor}</td><td className="px-4 py-3"><BooleanFlag value={item.isActive} label={item.isActive ? "Активна" : "Неактивна"} /></td></tr>; })}</tbody></table>}
         </div>
-        <div className="space-y-5">
-          <form key={`create-${entity}`} onSubmit={(event) => void save(event, "create")} className="space-y-3 rounded-lg bg-[#f5f7fa] p-4"><h3 className="font-semibold">Новая запись</h3>{isOrganizations ? <OrganizationFields /> : <ProductFields organizations={organizations} />}<label className="flex items-center gap-2 text-sm"><input type="checkbox" name="isActive" defaultChecked /> Активна</label><button disabled={saving} className="rounded-lg bg-[#1769c2] px-4 py-2 font-semibold text-white disabled:opacity-50">Добавить</button></form>
+        {(creating || selected) && <div className="space-y-5">
+          {creating && <form key={`create-${entity}`} onSubmit={(event) => void save(event, "create")} className="space-y-3 rounded-lg bg-[#f5f7fa] p-4"><h3 className="font-semibold">Новая запись</h3>{isOrganizations ? <OrganizationFields /> : <ProductFields organizations={organizations} />}<label className="flex items-center gap-2 text-sm"><input type="checkbox" name="isActive" defaultChecked /> Активна</label><div className="flex gap-2"><button disabled={saving} className="rounded-lg bg-[#1769c2] px-4 py-2 font-semibold text-white disabled:opacity-50">Добавить</button><button type="button" onClick={() => setCreating(false)} className="rounded-lg border border-[#b8c7da] px-4 py-2">Отмена</button></div></form>}
           {selected && <form key={isOrganizations ? (selected as OrganizationItem).id : (selected as ProductItem).code} onSubmit={(event) => void save(event, "update")} className="space-y-3 rounded-lg border border-[#e5eaf1] p-4"><h3 className="font-semibold">Редактирование</h3>{isOrganizations ? <OrganizationFields item={selected as OrganizationItem} /> : <ProductFields item={selected as ProductItem} organizations={organizations} />}<label className="flex items-center gap-2 text-sm"><input type="checkbox" name="isActive" defaultChecked={selected.isActive} /> Активна</label><div className="flex flex-wrap gap-2"><button disabled={saving} className="rounded-lg bg-[#1769c2] px-4 py-2 font-semibold text-white disabled:opacity-50">Сохранить</button><button disabled={saving} type="button" onClick={() => void remove()} className="rounded-lg border border-red-300 px-4 py-2 font-semibold text-red-700 disabled:opacity-50">Удалить</button></div></form>}
-        </div>
+        </div>}
       </div>
     </section>
   );

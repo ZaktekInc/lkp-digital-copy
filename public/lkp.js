@@ -1,13 +1,21 @@
+      const LOGIN_CREDENTIALS_KEY = "lkp-digital-copy-login-credentials";
+      function savedLoginCredentials() { try { const value = JSON.parse(window.localStorage.getItem(LOGIN_CREDENTIALS_KEY) || "null"); return value && typeof value.email === "string" && typeof value.password === "string" ? value : { email: "", password: "" }; } catch { return { email: "", password: "" }; } }
+      function saveLoginCredentials(email, password) { window.localStorage.setItem(LOGIN_CREDENTIALS_KEY, JSON.stringify({ email, password })); }
       function render(page, context) {
+        currentUser = browserStore.getCurrentUser();
+        if (page !== "login" && !currentUser) { page = "login"; context = null; }
+        if (page === "login" && currentUser) { page = "profile"; context = "profile"; }
         activePage = page;
         activeContext = context ?? null;
         persistNavigation(page, activeContext);
         let html = "";
         shell.classList.toggle("login-mode", page === "login");
         if (page === "login") {
-          html = `<section class="login-shell"><div class="page-head"><div class="page-title">Вход</div></div><label class="form-label">Ваш логин *<input class="form-control" type="text" autocomplete="username" placeholder="Логин" required data-login-field></label><label class="form-label">Ваш пароль *<input class="form-control" type="password" autocomplete="current-password" placeholder="Пароль" required data-login-field></label><div class="login-copy login-consent"><input class="form-check-input" id="login-consent" type="checkbox" data-login-consent><label for="login-consent">Нажимая кнопку «Войти», вы даете согласие на <a href="https://aqsi.ru/policy/" target="_blank" rel="noopener noreferrer"><strong>обработку персональных данных</strong></a> и подтверждаете, что ознакомлены и согласны с условиями <a href="https://aqsi.ru/lkp-agreement/" target="_blank" rel="noopener noreferrer"><strong>пользовательского соглашения</strong></a>.</label></div><div class="login-actions"><a href="https://dev1lkp.aqsi.ru/password-recovery" target="_blank" rel="noopener noreferrer">Забыли пароль?</a><button class="btn btn-primary" type="button" data-login disabled>Войти</button></div></section>`;
+          const savedCredentials = savedLoginCredentials();
+          html = `<section class="login-page"><h1 class="login-stand-title"><span>Цифровая копия</span><span>личного кабинета партнера</span></h1><div class="login-shell"><h2 class="login-title">Вход</h2><form data-login-form><label class="form-label">Ваш логин*<input class="form-control" type="email" autocomplete="username" placeholder="Email" required value="${esc(savedCredentials.email)}" data-login-email></label><label class="form-label">Ваш пароль*<span class="password-field"><input class="form-control" type="password" autocomplete="current-password" placeholder="Пароль" required value="${esc(savedCredentials.password)}" data-login-password><button class="password-toggle" type="button" aria-label="Показать пароль" aria-pressed="false" data-password-toggle><i data-lucide="eye" aria-hidden="true"></i></button></span></label><label class="login-consent"><input class="form-check-input" type="checkbox" required data-login-consent><span>Нажимая кнопку &quot;Войти&quot;, вы даете согласие на <a href="https://aqsi.ru/policy/" target="_blank" rel="noopener noreferrer">обработку персональных данных</a> и подтверждаете, что ознакомлены и согласны с условиями <a href="https://aqsi.ru/lkp-agreement/" target="_blank" rel="noopener noreferrer">пользовательского соглашения</a></span></label><div class="notice" role="alert" data-login-error></div><button class="login-forgot" type="button" data-forgot-password>Забыли пароль?</button><div class="notice" role="status" data-login-notice></div><div class="login-actions"><button class="btn login-submit" type="submit" data-login disabled>Войти</button></div></form></div></section>`;
         } else if (page === "profile") {
-          html = `<div class="page-head"><div class="page-title">Профиль</div></div><div class="partner-line"><span>ООО «Партнер»</span><span class="viz-badge">Постоянный партнер</span></div><section class="manager panel"><div class="manager-grid"><div class="key-value"><div class="label">Персональный менеджер</div><div>Смирнов Алексей</div></div><div class="key-value"><div class="label">Телефон</div><div>+7 987 654-32-10</div></div><div class="key-value"><div class="label">Email</div><div><a href="mailto:example@mail.ru">example@mail.ru</a></div></div></div></section><div class="tabs"><button class="btn btn-primary" data-tab="orgs">Организации</button><button class="btn" data-tab="contacts">Контакты</button></div><div id="profile-tab">${organizationTable()}</div><dialog class="form-dialog" data-contact-dialog><div class="dialog-head"><h2>Создать контактное лицо</h2><button class="btn btn-ghost" type="button" aria-label="Закрыть" data-close-contact><i data-lucide="x" aria-hidden="true"></i></button></div><form class="contact-form-grid" data-contact-form><label class="form-label contact-full">ФИО *<input class="form-control" required data-contact-full-name></label><label class="form-label">Должность *<input class="form-control" required data-contact-position></label><label class="form-label">E-mail *<input class="form-control" type="email" required data-contact-email></label><label class="form-label">Телефон *<input class="form-control" type="tel" required data-contact-phone></label><label class="form-label">Отдел *<input class="form-control" required data-contact-department></label><div class="notice contact-full" role="alert" data-contact-error aria-live="assertive"></div><div class="dialog-actions contact-full"><button class="btn btn-primary" type="submit">Сохранить</button></div></form></dialog>`;
+          const tab = ["profile", "orgs", "users", "contacts"].includes(context) ? context : "profile";
+          html = `<div class="page-head"><div class="page-title">Профиль партнера</div></div><div class="partner-line"><span>ООО «Партнер»</span><span class="viz-badge">Постоянный партнер</span></div><section class="manager panel"><div class="manager-grid"><div class="key-value"><div class="label">Персональный менеджер</div><div>Смирнов Алексей</div></div><div class="key-value"><div class="label">Телефон</div><div>+7 987 654-32-10</div></div><div class="key-value"><div class="label">Email</div><div><a href="mailto:example@mail.ru">example@mail.ru</a></div></div></div></section><div class="tabs"><button class="btn ${tab === "profile" ? "btn-primary" : ""}" data-tab="profile">Профиль</button><button class="btn ${tab === "orgs" ? "btn-primary" : ""}" data-tab="orgs">Организации</button><button class="btn ${tab === "users" ? "btn-primary" : ""}" data-tab="users">Пользователи</button><button class="btn ${tab === "contacts" ? "btn-primary" : ""}" data-tab="contacts">Контакты</button></div><div id="profile-tab">${profileTabHtml(tab)}</div>${profileDialogs()}<dialog class="form-dialog" data-contact-dialog><div class="dialog-head"><h2>Создать контактное лицо</h2><button class="btn btn-ghost" type="button" aria-label="Закрыть" data-close-contact><i data-lucide="x" aria-hidden="true"></i></button></div><form class="contact-form-grid" data-contact-form><label class="form-label contact-full">ФИО *<input class="form-control" required data-contact-full-name></label><label class="form-label">Должность *<input class="form-control" required data-contact-position></label><label class="form-label">E-mail *<input class="form-control" type="email" required data-contact-email></label><label class="form-label">Телефон *<input class="form-control" type="tel" required data-contact-phone></label><label class="form-label">Отдел *<input class="form-control" required data-contact-department></label><div class="notice contact-full" role="alert" data-contact-error aria-live="assertive"></div><div class="dialog-actions contact-full"><button class="btn btn-primary" type="submit">Сохранить</button></div></form></dialog>`;
         } else if (page === "organization") {
           const org = organizations[context || 0];
           const filtered = orders.filter(r => r[2] === org[1]);
@@ -72,11 +80,10 @@
           const licenseContract = sublicenseContractForOrganization(org);
           const prepaidLicenseContract = licenseContract?.paymentTerms === "Предоплата 100%";
           html = `<div class="page-head"><div class="page-title">Активация лицензий</div><button class="btn btn-primary" type="button" data-page="activations">Список активаций</button></div>
-            <div class="activation-top panel"><div><span class="label">Организация:</span> <strong>${esc(org)}</strong></div>${prepaidLicenseContract ? `<div class="balance-amount"><span><span class="label">Баланс:</span> <strong data-page-balance>${rub(currentBalance)}</strong></span><button class="btn special-action" type="button" data-top-up>Пополнить</button></div>` : ""}</div><div class="info-block"><p><strong>Активировать</strong> означает сгенерировать лицензию и купить. <strong>Заказ, Счет, УПД</strong> создаются автоматически после успешной активации.</p></div>
-            <div class="serial-line"><label class="serial-field"><span class="sr-only">Серийный номер</span><input class="form-control" type="text" inputmode="numeric" maxlength="16" placeholder="Проверить серийный номер" data-serial-input></label><button class="btn btn-primary" type="button" aria-label="Проверить серийный номер" data-check-serial><i data-lucide="arrow-right" aria-hidden="true"></i></button><input type="file" accept=".txt,text/plain" data-serial-file hidden><button class="btn" type="button" aria-label="Загрузить файл" data-upload-serials><i data-lucide="file" aria-hidden="true"></i></button><button class="btn btn-ghost" type="button" data-download-serial-example><i data-lucide="download" aria-hidden="true"></i>Скачать пример файла</button></div><div class="notice" data-serial-notice aria-live="polite"></div>
-            <div data-license-preview ${activationPreviewVisible ? "" : "hidden"}>
-              <section class="table-panel">${toolbar("activation-preview", { search: false, org: false })}<div data-license-table>${renderActivationPreviewTable()}</div></section>
-            </div><div class="action-row actions-always"><div class="left-actions"><button class="btn action-outline" type="button" data-create-activation disabled>Активировать</button><button class="btn danger-outline" type="button" data-delete-activation disabled><i data-lucide="trash-2" aria-hidden="true"></i>Удалить</button></div></div>
+            <div class="activation-top"><div class="activation-organization"><span class="label">Организация:</span> <strong>${esc(org)}</strong></div>${prepaidLicenseContract ? `<div class="balance-amount panel activation-balance-card"><span><span class="label">Баланс:</span> <strong data-page-balance>${rub(currentBalance)}</strong></span><button class="btn special-action" type="button" data-top-up>Пополнить</button></div>` : ""}</div><div class="info-block"><p><strong>Активировать</strong> означает сгенерировать лицензию и купить. <strong>Заказ, Счет, УПД</strong> создаются автоматически после успешной активации.</p></div>
+            <section class="table-panel activation-serial-panel"><div class="activation-serial-toolbar"><div class="serial-line"><label class="serial-field"><span class="sr-only">Серийный номер</span><input class="form-control" type="text" inputmode="numeric" maxlength="16" placeholder="Проверить серийный номер" data-serial-input></label><button class="btn btn-primary" type="button" aria-label="Проверить серийный номер" data-check-serial><i data-lucide="arrow-right" aria-hidden="true"></i></button><input type="file" accept=".txt,text/plain" data-serial-file hidden><button class="btn" type="button" aria-label="Загрузить файл" data-upload-serials><i data-lucide="file" aria-hidden="true"></i></button></div><button class="btn btn-ghost serial-example-download" type="button" data-download-serial-example>Скачать пример файла<i data-lucide="download" aria-hidden="true"></i></button></div><div class="activation-table-heading" data-activation-vendor ${activationPreviewVisible && activationDevices.length ? "" : "hidden"}><strong>Вендор: Пэй Киоск</strong></div><div class="notice" data-serial-notice aria-live="polite"></div>
+              <div data-license-preview ${activationPreviewVisible ? "" : "hidden"}><div data-license-table>${renderActivationPreviewTable()}</div></div>
+            </section><div class="action-row actions-always"><div class="left-actions"><button class="btn action-outline" type="button" data-create-activation disabled>Активировать</button><button class="btn danger-outline" type="button" data-delete-activation disabled><i data-lucide="trash-2" aria-hidden="true"></i>Удалить</button></div></div>
             <dialog class="confirm-dialog" data-delete-serials-dialog><div class="page-title">Подтвердите</div><div class="notice" data-delete-serials-text></div><div class="confirm-actions"><button class="btn btn-primary" type="button" data-delete-serials-confirm>OK</button><button class="btn" type="button" data-delete-serials-cancel>Отмена</button></div></dialog>
             <dialog class="form-dialog" data-over180-dialog><div class="dialog-head"><h2>Внимание!</h2></div><p>Срок действия текущей лицензии для указанных ниже СН более 180 дней:</p><div class="table-responsive"><table class="table table-sm modal-table"><thead><tr><th>Серийный номер</th><th>Лицензия</th><th>Текущая подписка</th><th>Новая подписка</th></tr></thead><tbody data-over180-body></tbody></table></div><div class="dialog-info">Вы уверены, что хотите активировать подписку на эти серийные номера?</div><div class="dialog-actions"><button class="btn btn-primary" type="button" data-over180-ok>ОК</button><button class="btn action-outline" type="button" data-over180-cancel>Отмена</button></div></dialog>
             <dialog class="form-dialog" data-activation-confirm-dialog><div class="dialog-head"><h2>Новая активация</h2></div><div class="table-responsive"><table class="table table-sm modal-table"><thead><tr><th>№</th><th>Наименование номенклатуры</th><th>Цена</th><th>Количество</th><th>Сумма</th></tr></thead><tbody data-activation-confirm-body></tbody></table></div><div class="mini-total">Итого: <span data-activation-confirm-total>0 ₽</span></div><label class="form-label activation-comment">Комментарий<textarea class="form-control" rows="3" placeholder="Комментарий" data-new-activation-comment></textarea></label><div class="muted-note">Комментарий можно редактировать после активации лицензий</div><div class="dialog-info">Новый заказ будет создан сразу после успешной активации лицензий, обычно не более 15 минут. Данные по заказу будут отправлены на вашу почту.</div><div class="dialog-actions"><button class="btn btn-primary" type="button" data-confirm-activation>ОК</button><button class="btn action-outline" type="button" data-cancel-activation>Отмена</button></div></dialog>
@@ -90,7 +97,7 @@
         } else if (page === "cart-result") {
           html = renderCartResult(context);
         }
-        if (page !== "login") html = breadcrumbs(page) + html;
+        if (page !== "login" && page !== "profile") html = breadcrumbs(page) + html;
         content.innerHTML = html;
         bindContent();
         if (page === "profile" && context === "contacts") content.querySelector('[data-tab="contacts"]')?.click();
@@ -379,16 +386,8 @@
           if (row.dataset.go === "activation-linked") render("activation", activations.find(a => a[0] === row.cells[0].textContent) || activations[0]);
         }));
         const tabs = content.querySelectorAll("[data-tab]");
-        tabs.forEach(button => button.addEventListener("click", () => {
-          tabs.forEach(x => x.classList.remove("btn-primary"));
-          button.classList.add("btn-primary");
-          const area = content.querySelector("#profile-tab");
-          if (button.dataset.tab === "orgs") area.innerHTML = organizationTable();
-          else area.innerHTML = `<div class="page-head"><span></span><button class="btn btn-primary" data-add-contact>Добавить контакт</button></div>${contactsLoadError ? `<div class="notice" role="alert">${esc(contactsLoadError)}</div>` : ""}${contactTable()}`;
-          activeContext = button.dataset.tab;
-          persistNavigation("profile", activeContext);
-          bindContent();
-        }));
+        tabs.forEach(button => button.addEventListener("click", () => render("profile", button.dataset.tab)));
+        bindProfileUsers();
         const addContact = content.querySelector("[data-add-contact]"); const contactDialog = content.querySelector("[data-contact-dialog]"); if (addContact && contactDialog) addContact.addEventListener("click", () => { if (typeof contactDialog.showModal === "function") contactDialog.showModal(); else contactDialog.setAttribute("open", ""); }); content.querySelectorAll("[data-close-contact]").forEach(button => button.addEventListener("click", () => { if (!contactDialog) return; if (typeof contactDialog.close === "function") contactDialog.close(); else contactDialog.removeAttribute("open"); })); const contactForm = content.querySelector("[data-contact-form]"); if (contactForm && contactDialog && contactForm.dataset.submitBound !== "true") { contactForm.dataset.submitBound = "true"; contactForm.addEventListener("submit", async event => { event.preventDefault(); const submit = contactForm.querySelector('[type="submit"]'); const errorArea = contactForm.querySelector("[data-contact-error]"); if (submit) submit.disabled = true; if (errorArea) errorArea.textContent = ""; try { await createServerContact({ fullName: contactForm.querySelector("[data-contact-full-name]").value, position: contactForm.querySelector("[data-contact-position]").value, email: contactForm.querySelector("[data-contact-email]").value, phone: contactForm.querySelector("[data-contact-phone]").value, department: contactForm.querySelector("[data-contact-department]").value }); if (typeof contactDialog.close === "function") contactDialog.close(); else contactDialog.removeAttribute("open"); render("profile"); const contactsTab = content.querySelector('[data-tab="contacts"]'); if (contactsTab) contactsTab.click(); } catch (error) { if (errorArea) errorArea.textContent = error instanceof Error ? error.message : "Не удалось сохранить контакт"; } finally { if (submit) submit.disabled = false; } }); }
         content.querySelectorAll("[data-order-number]").forEach(orderButton => orderButton.addEventListener("click", async event => {
           event.preventDefault();
@@ -445,6 +444,8 @@
           lastCheckedSerial = added[added.length - 1];
           preview.hidden = false;
           activationPreviewVisible = true;
+          const vendor = content.querySelector("[data-activation-vendor]");
+          if (vendor) vendor.hidden = false;
           const tableArea = content.querySelector("[data-license-table]");
           if (tableArea) tableArea.innerHTML = renderActivationPreviewTable();
           bindLicenseCheckboxes();
@@ -482,7 +483,7 @@
         });
         const downloadSerialExample = content.querySelector("[data-download-serial-example]");
         if (downloadSerialExample) downloadSerialExample.addEventListener("click", () => {
-          const blob = new Blob(["1234567890123456\n2345678901234567\n3456789012345678\n4567890123456789"], { type: "text/plain;charset=utf-8" });
+          const blob = new Blob(["1234567890123451\n2345678901234563\n3456789012345675\n4567890123456787\n5678901234567899"], { type: "text/plain;charset=utf-8" });
           const url = URL.createObjectURL(blob);
           const link = document.createElement("a");
           link.href = url;
@@ -512,14 +513,14 @@
           if (status) status.textContent = "Скачивание документа началось";
         }));
         const login = content.querySelector("[data-login]");
+        const loginForm = content.querySelector("[data-login-form]");
         const loginConsent = content.querySelector("[data-login-consent]");
-        const loginFields = [...content.querySelectorAll("[data-login-field]")];
-        const updateLogin = () => {
-          if (login) login.disabled = !(loginConsent && loginConsent.checked && loginFields.every(field => field.value.trim()));
-        };
-        if (loginConsent) loginConsent.addEventListener("change", updateLogin);
-        loginFields.forEach(field => field.addEventListener("input", updateLogin));
-        if (login) login.addEventListener("click", () => { if (!login.disabled) render("profile"); });
+        if (loginConsent && login) loginConsent.addEventListener("change", () => { login.disabled = !loginConsent.checked; });
+        const passwordToggle = content.querySelector("[data-password-toggle]");
+        const loginPassword = content.querySelector("[data-login-password]");
+        if (passwordToggle && loginPassword) passwordToggle.addEventListener("click", () => { const visible = loginPassword.type === "text"; loginPassword.type = visible ? "password" : "text"; passwordToggle.setAttribute("aria-label", visible ? "Показать пароль" : "Скрыть пароль"); passwordToggle.setAttribute("aria-pressed", String(!visible)); passwordToggle.innerHTML = `<i data-lucide="${visible ? "eye" : "eye-off"}" aria-hidden="true"></i>`; if (window.lucide) window.lucide.createIcons({ attrs: { width: 16, height: 16 } }); });
+        content.querySelector("[data-forgot-password]")?.addEventListener("click", () => { const notice = content.querySelector("[data-login-notice]"); if (notice) notice.textContent = "Заглушка для восстановления пароля"; });
+        if (loginForm) loginForm.addEventListener("submit", event => { event.preventDefault(); if (!loginConsent?.checked) return; const email = content.querySelector("[data-login-email]"); const password = content.querySelector("[data-login-password]"); const error = content.querySelector("[data-login-error]"); try { browserStore.login(email?.value, password?.value); saveLoginCredentials(email.value, password.value); render("profile", "profile"); } catch (caught) { if (error) error.textContent = caught.message || "Не удалось войти"; } });
         const createActivation = content.querySelector("[data-create-activation]");
         const over180Dialog = content.querySelector("[data-over180-dialog]");
         const activationConfirmDialog = content.querySelector("[data-activation-confirm-dialog]");
@@ -570,6 +571,8 @@
           activationPreviewVisible = activationDevices.length > 0;
           saveActivationDraft();
           closeDialog(deleteSerialsDialog);
+          const vendor = content.querySelector("[data-activation-vendor]");
+          if (vendor) vendor.hidden = !activationPreviewVisible;
           const tableArea = content.querySelector("[data-license-table]");
           if (tableArea) tableArea.innerHTML = renderActivationPreviewTable();
           bindLicenseCheckboxes();
@@ -593,6 +596,9 @@
         if (window.lucide) window.lucide.createIcons({ attrs: { width: 16, height: 16 } });
       }
 
+      const enforceSession = event => { if (activePage !== "login" && !browserStore.getCurrentUser()) { event.preventDefault(); event.stopImmediatePropagation(); render("login"); } };
+      content.addEventListener("click", enforceSession, true);
+      content.addEventListener("submit", enforceSession, true);
       root.querySelectorAll(".lkp-side [data-page]").forEach(button => button.addEventListener("click", () => {
         if (!button.disabled) render(button.dataset.page);
         if (window.matchMedia("(max-width: 700px)").matches) {
@@ -608,7 +614,7 @@
         target.hidden = expanded;
       }));
       const logout = root.querySelector("[data-logout]");
-      if (logout) logout.addEventListener("click", () => render("login"));
+      if (logout) logout.addEventListener("click", () => { browserStore.logout(); render("login"); });
       const mobileMenu = root.querySelector("[data-mobile-menu]");
       if (mobileMenu) mobileMenu.addEventListener("click", () => {
         const open = side.classList.toggle("mobile-open");

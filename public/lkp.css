@@ -841,10 +841,11 @@ svg {
     #lkp-current-map .partner-line { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
     #lkp-current-map .manager { margin-bottom: 18px; }
     #lkp-current-map .manager-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
+    #lkp-current-map .profile-user-card h2 { margin-bottom: 16px; }
     #lkp-current-map .key-value, #lkp-current-map .order-field, #lkp-current-map .activation-detail { display: grid; grid-template-columns: minmax(125px, .75fr) minmax(0, 1.5fr); gap: 14px; align-items: start; }
     #lkp-current-map .key-value .label, #lkp-current-map .order-field .label, #lkp-current-map .activation-detail .label { margin: 0; }
     #lkp-current-map .label { color: var(--muted-foreground); margin-bottom: 3px; }
-    #lkp-current-map .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+    #lkp-current-map .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
     #lkp-current-map .table-responsive { margin-top: 8px; }
     #lkp-current-map tbody tr[data-go] { cursor: pointer; }
     #lkp-current-map tbody tr[data-go]:hover { background: var(--accent); color: var(--accent-foreground); }
@@ -906,10 +907,18 @@ svg {
     #lkp-current-map .org-choice-main, #lkp-current-map .org-choice-balance { display: grid; gap: 4px; }
     #lkp-current-map .org-choice-balance { min-width: 100px; text-align: right; }
     #lkp-current-map .offer-copy { margin: 14px 0; max-width: 720px; }
-    #lkp-current-map .activation-top { display: grid; gap: 8px; margin-bottom: 14px; }
+    #lkp-current-map .activation-top { display: grid; gap: 12px; margin-bottom: 14px; }
     #lkp-current-map .activation-top .grow { flex: 1 1 320px; }
-    #lkp-current-map .serial-line { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; margin-bottom: 12px; }
-    #lkp-current-map .serial-line .serial-field { flex: 0 1 260px; width: min(100%, 260px); margin: 0; }
+    #lkp-current-map .activation-organization { padding-block: 4px; }
+    #lkp-current-map .activation-balance-card { width: fit-content; }
+    #lkp-current-map .activation-serial-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+    #lkp-current-map .serial-line { display: flex; flex: 1 1 auto; gap: 8px; align-items: center; flex-wrap: nowrap; min-width: 0; }
+    #lkp-current-map .serial-line .serial-field { flex: 0 1 260px; width: min(100%, 260px); min-width: 180px; margin: 0; }
+    #lkp-current-map .serial-line > .btn { flex: 0 0 auto; }
+    #lkp-current-map .activation-table-heading { margin-bottom: 14px; }
+    #lkp-current-map .serial-example-download { flex: 0 0 auto; margin-left: auto; }
+    #lkp-current-map .activation-table-responsive { overflow: visible; }
+    #lkp-current-map .activation-preview-table thead th { position: sticky; top: 0; z-index: 5; background: #fff; box-shadow: 0 1px 0 color-mix(in srgb, var(--foreground) 16%, transparent); }
     #lkp-current-map .state-none { color: #7a8494; }
     #lkp-current-map .state-expired { color: #b42318; }
     #lkp-current-map .state-expiring { color: #9b6500; }
@@ -936,12 +945,23 @@ svg {
     #lkp-current-map .price-dialog { max-width: 620px; color: var(--foreground); background: var(--card); border: 1px solid var(--border); }
     #lkp-current-map .dialog-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
     #lkp-current-map .documents { display: flex; gap: 8px; flex-wrap: wrap; }
-    #lkp-current-map .login-shell { max-width: 520px; margin: 48px auto; background: #fff; border: 1px solid rgba(11,59,112,.1); border-radius: 14px; padding: 28px; box-shadow: 0 12px 38px rgba(23,34,56,.08); }
+    #lkp-current-map .login-page { max-width: 520px; margin: 48px auto; }
+    #lkp-current-map .login-stand-title { margin: 0 0 18px; text-align: center; color: #0b3b70; font-size: clamp(18px, 6vw, 34px); line-height: 1.2; }
+    #lkp-current-map .login-stand-title span { display: block; white-space: nowrap; }
+    #lkp-current-map .login-shell { background: #fff; border: 1px solid rgba(11,59,112,.1); border-radius: 14px; padding: 28px; box-shadow: 0 12px 38px rgba(23,34,56,.08); }
+    #lkp-current-map .login-title { margin: 0 0 22px; text-align: center; color: #0b3b70; font-size: 28px; }
     #lkp-current-map .login-shell .form-label { display: block; margin-bottom: 12px; }
     #lkp-current-map .login-copy { margin: 16px 0; }
-    #lkp-current-map .login-consent { display: grid; grid-template-columns: 18px minmax(0,1fr); gap: 10px; align-items: start; }
+    #lkp-current-map .password-field { position: relative; display: block; margin-top: 6px; }
+    #lkp-current-map .password-field .form-control { padding-right: 44px; }
+    #lkp-current-map .password-toggle { position: absolute; top: 50%; right: 10px; display: grid; width: 32px; height: 32px; padding: 0; transform: translateY(-50%); place-items: center; border: 0; color: #526176; background: transparent; cursor: pointer; }
+    #lkp-current-map .login-consent { display: grid; grid-template-columns: 18px minmax(0,1fr); gap: 10px; align-items: start; margin: 16px 0; line-height: 1.45; }
     #lkp-current-map .login-consent .form-check-input { margin-top: 3px; }
-    #lkp-current-map .login-actions { display: grid; gap: 10px; }
+    #lkp-current-map .login-consent a { color: var(--primary); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+    #lkp-current-map .login-forgot { display: block; margin-inline: auto; padding: 0; border: 0; color: var(--primary); background: transparent; font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+    #lkp-current-map .login-actions { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 42px; }
+    #lkp-current-map .login-submit { min-width: 160px; border-color: #e0ad00; color: #172238; background: #ffd43b; }
+    #lkp-current-map .login-submit:not(:disabled):hover { background: #f4c725; }
     #lkp-current-map .lkp-shell.login-mode { grid-template-columns: 1fr; }
     #lkp-current-map .lkp-shell.login-mode .lkp-side { display: none; }
     #lkp-current-map .org-choice .org-inn { display: block; }
@@ -993,10 +1013,16 @@ svg {
     #lkp-current-map dialog::backdrop { background: rgba(6,41,79,.34); }
     #lkp-current-map .form-dialog { width: min(760px, calc(100vw - 28px)); }
     #lkp-current-map .form-dialog .form-label { display: block; margin-bottom: 12px; }
+    #lkp-current-map .form-fields-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
     #lkp-current-map .contact-form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 0 14px; }
     #lkp-current-map .contact-form-grid .contact-full { grid-column: 1 / -1; }
     #lkp-current-map .balance-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin: 14px 0; }
     #lkp-current-map .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+    #lkp-current-map .dialog-actions-split { justify-content: space-between; }
+    #lkp-current-map .user-dialog-actions { justify-content: space-between; align-items: center; }
+    #lkp-current-map .dialog-actions-right { display: inline-flex; gap: 8px; margin-left: auto; }
+    #lkp-current-map .profile-actions { display: flex; justify-content: flex-start; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
+    #lkp-current-map .action-danger { border-color: var(--destructive); color: var(--destructive); background: transparent; }
     #lkp-current-map .info-block { margin: 14px 0; line-height: 1.55; }
     #lkp-current-map .info-block p + p { margin-top: 10px; }
     #lkp-current-map .actions-always { margin-top: 14px; }
@@ -1019,6 +1045,14 @@ svg {
       background-repeat: no-repeat;
       background-size: 15px 15px;
     }
+    @media (min-width: 701px) {
+      :root[data-visualize-standalone],
+      :root[data-visualize-standalone] > body { height: 100%; overflow: hidden; }
+      #lkp-current-map { height: 100%; overflow: hidden; }
+      #lkp-current-map .lkp-shell { height: 100%; min-height: 0; overflow: hidden; }
+      #lkp-current-map .lkp-side { height: 100%; }
+      #lkp-current-map .content { height: 100%; overflow-y: auto; overscroll-behavior: contain; }
+    }
     @media (min-width: 701px) and (max-width: 1280px) {
       #lkp-current-map .content { padding: 20px clamp(28px, 5.5vw, 70px) 30px; }
       #lkp-current-map .details, #lkp-current-map .org-details-grid, #lkp-current-map .order-columns { gap: 14px; }
@@ -1032,6 +1066,7 @@ svg {
     }
     @media (max-width: 700px) {
       #lkp-current-map .cart-items { min-width: 620px; }
+      #lkp-current-map .activation-table-responsive { overflow-x: auto; overflow-y: hidden; }
       #lkp-current-map .lkp-shell { grid-template-columns: 1fr; }
       #lkp-current-map .lkp-side { width: 100%; min-height: auto; padding: 10px 12px; }
       #lkp-current-map .brand { margin-bottom: 0; }
@@ -1045,7 +1080,7 @@ svg {
       #lkp-current-map .lkp-side.mobile-open .submenu[hidden] { display: none !important; }
       #lkp-current-map .side-main, #lkp-current-map .side-sub { min-height: 44px; }
       #lkp-current-map .content { padding: 16px 14px 24px; }
-      #lkp-current-map .manager-grid, #lkp-current-map .details, #lkp-current-map .org-details-grid, #lkp-current-map .balance-grid { grid-template-columns: 1fr; }
+      #lkp-current-map .manager-grid, #lkp-current-map .details, #lkp-current-map .org-details-grid, #lkp-current-map .balance-grid, #lkp-current-map .form-fields-row { grid-template-columns: 1fr; }
       #lkp-current-map .key-value, #lkp-current-map .order-field, #lkp-current-map .activation-detail { grid-template-columns: minmax(110px, .8fr) minmax(0, 1.2fr); gap: 9px; }
       #lkp-current-map .cart-user { grid-template-columns: 1fr; }
       #lkp-current-map .toolbar-spacer { margin-left: 0; }
@@ -1054,10 +1089,13 @@ svg {
       #lkp-current-map .order-columns { grid-template-columns: 1fr; }
       #lkp-current-map .filter-control, #lkp-current-map .filter-add { flex: 1 1 100%; min-width: 0; }
       #lkp-current-map .filter-chip { flex: 1; min-width: 0; }
-      #lkp-current-map .serial-line .serial-field { flex-basis: 100%; }
+      #lkp-current-map .activation-serial-toolbar { flex-direction: column; align-items: stretch; }
+      #lkp-current-map .serial-line { flex-wrap: wrap; }
+      #lkp-current-map .serial-line .serial-field { flex: 1 1 180px; width: auto; min-width: 0; }
+      #lkp-current-map .serial-example-download { align-self: flex-end; }
       #lkp-current-map .action-row .left-actions { width: 100%; }
       #lkp-current-map .action-row .left-actions .btn { flex: 1 1 120px; }
-      #lkp-current-map .login-shell { margin: 18px auto; }
+      #lkp-current-map .login-page { margin: 18px auto; }
       #lkp-current-map .contact-form-grid { grid-template-columns: 1fr; }
       #lkp-current-map .contact-form-grid .contact-full { grid-column: auto; }
       #lkp-current-map .info-popover { position: fixed; left: 14px; right: 14px; top: 18%; width: auto; }

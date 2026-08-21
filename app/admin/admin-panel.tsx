@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import BusinessDataPanel from "./business-data-panel";
 import LicensesPanel from "./licenses-panel";
 import ReferencePanel from "./reference-panel";
+import PartnerUsersPanel from "./partner-users-panel";
 
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
@@ -238,7 +239,7 @@ export default function AdminPanel() {
             </div>
           )}
         </aside>
-      </div> : section === "licenses" ? <div className="mx-auto max-w-7xl p-6"><LicensesPanel /></div> : section === "counterparties" ? <div className="mx-auto max-w-7xl p-6"><BusinessDataPanel key={section} entity="organizations" title="Контрагенты" /></div> : section === "products" ? <div className="mx-auto max-w-7xl p-6"><BusinessDataPanel key={section} entity="products" title="Список продукции" /></div> : <div className="mx-auto max-w-7xl p-6"><ReferencePanel key={section} kind={section} title={sections.find((item) => item.id === section)?.title || "Справочник"} /></div>}
+      </div> : section === "partners" ? <div className="mx-auto max-w-7xl p-6"><PartnerUsersPanel /></div> : section === "licenses" ? <div className="mx-auto max-w-7xl p-6"><LicensesPanel /></div> : section === "counterparties" ? <div className="mx-auto max-w-7xl p-6"><BusinessDataPanel key={section} entity="organizations" title="Контрагенты" /></div> : section === "products" ? <div className="mx-auto max-w-7xl p-6"><BusinessDataPanel key={section} entity="products" title="Список продукции" /></div> : <div className="mx-auto max-w-7xl p-6"><ReferencePanel key={section} kind={section} title={sections.find((item) => item.id === section)?.title || "Справочник"} /></div>}
     </main>
   );
 }
